@@ -56,6 +56,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 
 	api := r.Group("/api")
 	{
+		api.GET("/health", h.Health)
 		api.POST("/auth/login", h.Login)
 		api.POST("/auth/logout", h.Logout)
 		api.POST("/auth/register", h.Register)

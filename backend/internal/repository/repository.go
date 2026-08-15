@@ -25,6 +25,10 @@ func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+func (r *Repository) Ping(ctx context.Context) error {
+	return r.pool.Ping(ctx)
+}
+
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	row := r.pool.QueryRow(ctx, `
 		SELECT id, team_id, name, email, password_hash, role, email_verified, avatar_file, created_at

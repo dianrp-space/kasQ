@@ -533,11 +533,13 @@ Di aaPanel **Security**, buka port 80, 443, dan port SSH saja.
 - [ ] Email verifikasi terkirim (SMTP benar)
 - [ ] Integrasi WA/Telegram (jika dipakai) — scan QR dari halaman Integrasi
 - [ ] `systemctl status kasq-backend` → `active (running)`
+- [ ] `curl -s http://127.0.0.1:8084/api/health` → `{"status":"ok",...}`
 
 ### 10. Troubleshooting
 
 | Gejala | Solusi |
 |--------|--------|
+| Halaman "Memuat..." + 404 `/_app/*.js` | aaPanel regex static `*.js` menang — tambah `location ^~ /_app/` (lihat `nginx-kasq.conf`) atau comment block static js/css aaPanel |
 | 502 Bad Gateway | Cek `systemctl status kasq-backend` + `pm2 status kasq-frontend`, pastikan port 8084 & 3008 listen |
 | API 401 / cookie gagal | Pastikan `APP_URL` pakai `https://` yang sama dengan domain |
 | Upload gagal | Cek `client_max_body_size` Nginx + kredensial MinIO |
