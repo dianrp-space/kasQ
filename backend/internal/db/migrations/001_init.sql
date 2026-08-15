@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- gen_random_uuid() built-in sejak PostgreSQL 13 (tanpa extension pgcrypto)
 
 CREATE TYPE user_role AS ENUM ('admin', 'ops');
 CREATE TYPE tx_jenis AS ENUM ('in', 'out');

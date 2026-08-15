@@ -217,7 +217,7 @@ Template siap pakai ada di folder [`deploy/aapanel/`](deploy/aapanel/).
 
 ```
 Browser → Nginx (443) → /api/*  → kasq-backend  (:8084, systemd)
-                      → /*      → kasq-frontend (:3008, systemd)
+                      → /*      → kasq-frontend (:3008, PM2)
 PostgreSQL (:5432) + MinIO/S3 (remote)
 ```
 
@@ -260,7 +260,7 @@ make deploy
 # atau: ./deploy/deploy.sh
 ```
 
-Script akan: build backend (`GOOS=linux`) → build frontend → `rsync` ke server → `chmod` → `systemctl restart kasq-backend kasq-frontend`.
+Script akan: build backend (`GOOS=linux`) → build frontend → `rsync` ke server → restart backend (systemd) + frontend (PM2).
 
 > **Syarat mesin dev:** Go, Node.js, `rsync`, akses SSH ke VPS (WSL/Linux).  
 > **Syarat server:** Node.js (jalankan `frontend/build/index.js`), **tidak perlu Go**.
@@ -385,11 +385,15 @@ mkdir -p backend/data/wa-sessions
 chown -R www:www backend/data
 ```
 
-### 6. systemd — Backend & Frontend
+### 6. systemd (backend) + PM2 (frontend)
 
-Template ada di [`deploy/aapanel/kasq-backend.service`](deploy/aapanel/kasq-backend.service) dan [`deploy/aapanel/kasq-frontend.service`](deploy/aapanel/kasq-frontend.service).
+Template backend: [`deploy/aapanel/kasq-backend.service`](deploy/aapanel/kasq-backend.service)  
+Template frontend PM2: [`deploy/aapanel/ecosystem.config.cjs`](deploy/aapanel/ecosystem.config.cjs)
 
 **Ganti semua** `kasq.example.com` dengan domain/path kamu (mis. `kasq.dianrp.com`).
+
+> Frontend pakai **PM2** dengan user NVM yang sudah ada (mis. `dianrp`) — tidak perlu install Node system-wide.  
+> Matikan systemd frontend jika pernah dipasang: `systemctl disable --now kasq-frontend`
 
 #### Backend — `/etc/systemd/system/kasq-backend.service`
 
@@ -427,69 +431,53 @@ WantedBy=multi-user.target
 
 Port backend dari `.env` → `PORT=8084` (internal, di-proxy Nginx).
 
-#### Frontend — `/etc/systemd/system/kasq-frontend.service`
+#### Frontend — PM2 (`ecosystem.config.cjs`)
 
-```ini
-[Unit]
-Description=KasQ Frontend (SvelteKit Node)
-After=network-online.target kasq-backend.service
-Wants=network-online.target
+Port **3008**, di-proxy Nginx ke `/`. File config di-upload otomatis ke `frontend/ecosystem.config.cjs` saat `make deploy`.
 
-[Service]
-Type=simple
-User=www
-Group=www
-WorkingDirectory=/www/wwwroot/kasq.example.com/frontend
-Environment=NODE_ENV=production
-Environment=PORT=3008
-Environment=HOST=127.0.0.1
-Environment=BODY_SIZE_LIMIT=10485760
-ExecStart=/usr/bin/node /www/wwwroot/kasq.example.com/frontend/build/index.js
-Restart=on-failure
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
+**Setup sekali** (sebagai user PM2 / NVM, mis. `dianrp`):
 
-[Install]
-WantedBy=multi-user.target
+```bash
+cd /www/wwwroot/kasq.example.com/frontend
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup    # ikuti instruksi sekali
 ```
 
-| Field | Fungsi |
-|-------|--------|
-| `PORT=3008` | Port internal frontend (di-proxy Nginx ke `/`) |
-| `ExecStart` | Hasil `npm run build` → `frontend/build/index.js` |
-| `BODY_SIZE_LIMIT` | Batas upload via SvelteKit (10MB) |
+Set `DEPLOY_FRONTEND=pm2` dan `DEPLOY_PM2_USER=dianrp` di `deploy/deploy.env`.
 
-Cek path Node jika perlu: `which node` (biasanya `/usr/bin/node`).
+```bash
+pm2 status kasq-frontend
+pm2 logs kasq-frontend
+pm2 restart kasq-frontend   # atau cukup make deploy (auto reload)
+```
 
-#### Install & jalankan
+<details>
+<summary>Alternatif: systemd frontend (legacy)</summary>
+
+Template: [`deploy/aapanel/kasq-frontend.service`](deploy/aapanel/kasq-frontend.service) — butuh Node di path system (`/usr/bin/node`). Set `DEPLOY_FRONTEND=systemd` di deploy.env.
+
+</details>
+
+#### Install backend & jalankan
 
 ```bash
 cd /www/wwwroot/kasq.example.com
 
-# Opsi A: edit template lalu copy
 nano deploy/aapanel/kasq-backend.service
-nano deploy/aapanel/kasq-frontend.service
 cp deploy/aapanel/kasq-backend.service /etc/systemd/system/
-cp deploy/aapanel/kasq-frontend.service /etc/systemd/system/
-
-# Opsi B: buat langsung di systemd
-# nano /etc/systemd/system/kasq-backend.service
-# nano /etc/systemd/system/kasq-frontend.service
 
 systemctl daemon-reload
-systemctl enable kasq-backend kasq-frontend
-systemctl start kasq-backend kasq-frontend
-systemctl status kasq-backend kasq-frontend
+systemctl enable --now kasq-backend
+systemctl status kasq-backend
 ```
 
 Perintah berguna:
 
 ```bash
 journalctl -u kasq-backend -f    # log backend
-journalctl -u kasq-frontend -f   # log frontend
 systemctl restart kasq-backend   # setelah update backend
-systemctl restart kasq-frontend  # setelah rebuild frontend
+pm2 logs kasq-frontend           # log frontend (user PM2)
 ```
 
 **Update deploy backend:**
@@ -501,13 +489,12 @@ go build -o kasq-server ./cmd/server
 systemctl restart kasq-backend
 ```
 
-**Update deploy frontend:**
+**Update deploy frontend:** `make deploy` (PM2 reload otomatis) atau manual:
 
 ```bash
 cd /www/wwwroot/kasq.example.com/frontend
-git pull
 npm ci && npm run build
-systemctl restart kasq-frontend
+pm2 reload kasq-frontend
 ```
 
 ### 7. Nginx di aaPanel
@@ -551,7 +538,7 @@ Di aaPanel **Security**, buka port 80, 443, dan port SSH saja.
 
 | Gejala | Solusi |
 |--------|--------|
-| 502 Bad Gateway | Cek `systemctl status kasq-backend kasq-frontend`, pastikan port 8084 & 3008 listen |
+| 502 Bad Gateway | Cek `systemctl status kasq-backend` + `pm2 status kasq-frontend`, pastikan port 8084 & 3008 listen |
 | API 401 / cookie gagal | Pastikan `APP_URL` pakai `https://` yang sama dengan domain |
 | Upload gagal | Cek `client_max_body_size` Nginx + kredensial MinIO |
 | MinIO Access Denied | Pastikan IAM/key punya `PutObject` + `GetObject` pada bucket `kasq` |

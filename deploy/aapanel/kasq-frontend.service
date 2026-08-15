@@ -1,5 +1,8 @@
+# Opsional — pakai jika frontend di systemd (bukan PM2).
+# Disarankan: PM2 + NVM user yang sudah ada (lihat ecosystem.config.cjs).
+
 [Unit]
-Description=KasQ Frontend (SvelteKit Node)
+Description=KasQ Frontend (SvelteKit Node) [legacy — prefer PM2]
 After=network-online.target kasq-backend.service
 Wants=network-online.target
 
@@ -7,12 +10,12 @@ Wants=network-online.target
 Type=simple
 User=www
 Group=www
-WorkingDirectory=/www/wwwroot/kasq.dianrp.com/frontend
+WorkingDirectory=/www/wwwroot/kasq.dianrp.com/kasQ/frontend
 Environment=NODE_ENV=production
 Environment=PORT=3008
 Environment=HOST=127.0.0.1
 Environment=BODY_SIZE_LIMIT=10485760
-ExecStart=/usr/bin/node /www/wwwroot/kasq.dianrp.com/frontend/build/index.js
+ExecStart=/usr/local/bin/node /www/wwwroot/kasq.dianrp.com/kasQ/frontend/build/index.js
 Restart=on-failure
 RestartSec=5
 

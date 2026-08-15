@@ -152,4 +152,5 @@ run-prod-frontend:
 	cd frontend && PORT=$(FRONTEND_PORT) node build/index.js
 
 deploy:
+	@sed -i 's/\r$$//' deploy/deploy.sh 2>/dev/null || true
 	@bash deploy/deploy.sh
