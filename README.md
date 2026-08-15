@@ -10,6 +10,24 @@ Aplikasi fullstack pencatatan pemasukan & pengeluaran kas tim operasional.
 
 **Environment:** Development & deployment di **WSL/Linux** (Ubuntu/Debian).
 
+**Repository:** [github.com/dianrp-space/kasQ](https://github.com/dianrp-space/kasQ)
+
+## Clone
+
+Jalankan di **WSL** (SSH key GitHub harus terdaftar di WSL, bukan PowerShell):
+
+```bash
+# HTTPS
+git clone https://github.com/dianrp-space/kasQ.git
+cd kasQ
+
+# atau SSH
+git clone git@github.com:dianrp-space/kasQ.git
+cd kasQ
+```
+
+> Tips performa: clone ke filesystem Linux, mis. `~/projects/kasQ` — bukan `/mnt/e/...` jika bisa.
+
 ## Fitur
 
 - Multi-kas per tim dengan saldo terhitung otomatis
@@ -39,8 +57,9 @@ Semua tool diinstall **di dalam WSL**, bukan Windows:
 ## Quick Start
 
 ```bash
-# 1. Clone / masuk ke project (di WSL)
-cd ~/projects/kasQ   # atau path project kamu
+# 1. Clone repo (di WSL)
+git clone https://github.com/dianrp-space/kasQ.git ~/projects/kasQ
+cd ~/projects/kasQ
 
 # 2. Install PostgreSQL & start service
 sudo apt update && sudo apt install -y postgresql postgresql-contrib
@@ -291,7 +310,8 @@ Install systemd + Nginx (lihat §6 dan §7). Setelah itu, update berikutnya cuku
 ```bash
 mkdir -p /www/wwwroot/kasq.example.com
 cd /www/wwwroot/kasq.example.com
-git clone https://github.com/YOUR_USER/kasQ.git .
+git clone https://github.com/dianrp-space/kasQ.git .
+# atau: git clone git@github.com:dianrp-space/kasQ.git .
 ```
 
 Lalu lanjut build manual §5.
