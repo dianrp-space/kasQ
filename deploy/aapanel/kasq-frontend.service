@@ -1,0 +1,23 @@
+[Unit]
+Description=KasQ Frontend (SvelteKit Node)
+After=network-online.target kasq-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/www/wwwroot/kasq.dianrp.com/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3008
+Environment=HOST=127.0.0.1
+Environment=BODY_SIZE_LIMIT=10485760
+ExecStart=/usr/bin/node /www/wwwroot/kasq.dianrp.com/frontend/build/index.js
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

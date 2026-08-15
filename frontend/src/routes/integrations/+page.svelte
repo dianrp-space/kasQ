@@ -1,0 +1,536 @@
+<script lang="ts">
+	import { api } from '$lib/api';
+	import type { Integration, Team, User } from '$lib/types';
+	import { confirm } from '$lib/confirm.svelte';
+	import { toast } from '$lib/toast.svelte';
+	import { goto } from '$app/navigation';
+	import { Alert, Badge, Button, Card, Heading, Input, Label } from 'flowbite-svelte';
+
+	let user = $state<User | null>(null);
+	let teams = $state<Team[]>([]);
+	let selectedTeam = $state('');
+	let integration = $state<Integration | null>(null);
+	let teleToken = $state('');
+	let teleChatId = $state('');
+	let teleBotName = $state('');
+	let teleBotUsername = $state('');
+	let telePictureUrl = $state('');
+	let showTeleToken = $state(false);
+	let waQR = $state('');
+	let waStatus = $state('');
+	let waPhone = $state('');
+	let waName = $state('');
+	let waPictureUrl = $state('');
+	let waLoginTab = $state<'qr' | 'pair'>('qr');
+	let waPairPhone = $state('');
+	let waPairCode = $state('');
+	let waQrTimeout = $state(20);
+	let waPairExpires = $state(0);
+	let error = $state('');
+	let success = $state('');
+	let reportSlug = $state('');
+	let pollInterval: ReturnType<typeof setInterval> | null = null;
+	let teleAvatarObjectUrl: string | null = null;
+	let waAvatarObjectUrl: string | null = null;
+
+	function revokeTeleAvatar() {
+		if (teleAvatarObjectUrl) {
+			URL.revokeObjectURL(teleAvatarObjectUrl);
+			teleAvatarObjectUrl = null;
+		}
+	}
+
+	async function loadTeleAvatar(teamId: string, hasAvatar: boolean) {
+		revokeTeleAvatar();
+		telePictureUrl = '';
+		if (!hasAvatar) return;
+		const url = await api.getTeleBotAvatar(teamId);
+		if (url) {
+			teleAvatarObjectUrl = url;
+			telePictureUrl = url;
+		}
+	}
+
+	function revokeWaAvatar() {
+		if (waAvatarObjectUrl) {
+			URL.revokeObjectURL(waAvatarObjectUrl);
+			waAvatarObjectUrl = null;
+		}
+	}
+
+	async function loadWaAvatar(teamId: string) {
+		revokeWaAvatar();
+		waPictureUrl = '';
+		const url = await api.getWABotAvatar(teamId);
+		if (url) {
+			waAvatarObjectUrl = url;
+			waPictureUrl = url;
+		}
+	}
+
+	const reportPreviewUrl = $derived(
+		integration?.report_url
+			? integration.report_url.replace(/\/[^/]+$/, '/' + (reportSlug.trim() || integration.report_token || ''))
+			: ''
+	);
+
+	async function load() {
+		user = await api.me();
+		if (user.role === 'admin') {
+			goto('/admin');
+			return;
+		}
+		teams = await api.getTeams();
+		if (!selectedTeam && teams.length > 0) {
+			selectedTeam = user.team_id || teams[0].id;
+		}
+		if (selectedTeam) await loadIntegration();
+	}
+
+	async function loadIntegration() {
+		integration = await api.getIntegration(selectedTeam);
+		waStatus = integration.wa_status;
+		waPhone = integration.wa_phone ?? '';
+		waName = integration.wa_name ?? '';
+		waPictureUrl = '';
+		if (integration.wa_enabled && integration.wa_status === 'connected') {
+			await loadWaAvatar(selectedTeam);
+		} else {
+			revokeWaAvatar();
+		}
+		teleToken = integration.tele_bot_token ?? '';
+		teleChatId =
+			integration.tele_allowed_chat_id != null ? String(integration.tele_allowed_chat_id) : '';
+		teleBotName = integration.tele_bot_name ?? '';
+		teleBotUsername = integration.tele_bot_username ?? '';
+		if (integration.tele_enabled && integration.tele_bot_has_avatar) {
+			await loadTeleAvatar(selectedTeam, true);
+		} else {
+			revokeTeleAvatar();
+			telePictureUrl = '';
+		}
+		reportSlug = integration.report_token ?? integration.team_slug ?? '';
+		if (integration.wa_enabled && waStatus === 'qr') {
+			startQRPoll();
+		}
+		if (integration.wa_enabled && (waStatus === 'pair_code' || waStatus === 'connecting' || waStatus === 'awaiting_login')) {
+			startQRPoll();
+		}
+	}
+
+	function applyWAStatus(qr: Awaited<ReturnType<typeof api.getWAQR>>) {
+		waStatus = qr.status;
+		waQR = qr.qr;
+		if (qr.phone) waPhone = qr.phone;
+		waName = qr.wa_name ?? waName;
+		if (qr.status === 'connected') {
+			void loadWaAvatar(selectedTeam);
+		}
+		waPairCode = qr.pair_code ?? '';
+		waQrTimeout = qr.qr_timeout_seconds ?? 20;
+		waPairExpires = qr.pair_code_expires_seconds ?? 0;
+		if (qr.login_mode === 'pair') waLoginTab = 'pair';
+		else if (qr.login_mode === 'qr') waLoginTab = 'qr';
+	}
+
+	function startQRPoll() {
+		stopQRPoll();
+		pollInterval = setInterval(async () => {
+			try {
+				const qr = await api.getWAQR(selectedTeam);
+				applyWAStatus(qr);
+				if (qr.status === 'connected') {
+					stopQRPoll();
+					await loadIntegration();
+				}
+			} catch {}
+		}, 3000);
+	}
+
+	async function beginQRLogin() {
+		error = '';
+		try {
+			await api.startWAQRLogin(selectedTeam);
+			startQRPoll();
+			const qr = await api.getWAQR(selectedTeam);
+			applyWAStatus(qr);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Gagal mulai QR';
+		}
+	}
+
+	async function beginPairLogin() {
+		error = '';
+		success = '';
+		if (!waPairPhone.trim()) {
+			error = 'Nomor WhatsApp wajib diisi';
+			return;
+		}
+		try {
+			const result = await api.startWAPairLogin(selectedTeam, waPairPhone.trim());
+			waPairCode = result.pair_code;
+			waPairExpires = result.expires_seconds;
+			waStatus = result.status;
+			success = 'Kode pairing dibuat — masukkan di HP dalam 60 detik';
+			startQRPoll();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Gagal buat kode pairing';
+		}
+	}
+
+	function stopQRPoll() {
+		if (pollInterval) {
+			clearInterval(pollInterval);
+			pollInterval = null;
+		}
+	}
+
+	async function toggleWA(enabled: boolean) {
+		error = '';
+		try {
+			await api.updateWA(selectedTeam, enabled);
+			if (enabled) {
+				await loadIntegration();
+				if (waLoginTab === 'qr') {
+					await beginQRLogin();
+				} else {
+					startQRPoll();
+				}
+			} else {
+				stopQRPoll();
+				waQR = '';
+				waPhone = '';
+				waName = '';
+				revokeWaAvatar();
+				waPictureUrl = '';
+				waPairCode = '';
+				await loadIntegration();
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Gagal';
+		}
+	}
+
+	async function saveTele(enabled: boolean) {
+		error = '';
+		success = '';
+		try {
+			const payload: {
+				enabled: boolean;
+				bot_token?: string;
+				chat_id?: number | null;
+			} = { enabled };
+
+			if (teleToken.trim()) {
+				payload.bot_token = teleToken.trim();
+			}
+			if (teleChatId.trim()) {
+				payload.chat_id = parseInt(teleChatId.trim(), 10);
+			} else if (enabled) {
+				payload.chat_id = null;
+			}
+
+			await api.updateTele(selectedTeam, payload);
+			success = enabled ? 'Telegram diaktifkan' : 'Telegram dinonaktifkan';
+			if (!enabled) {
+				revokeTeleAvatar();
+				teleBotName = '';
+				teleBotUsername = '';
+				telePictureUrl = '';
+			}
+			await loadIntegration();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Gagal';
+		}
+	}
+
+	async function saveReportSlug() {
+		error = '';
+		success = '';
+		const slug = reportSlug.trim();
+		if (!slug) {
+			error = 'Slug link laporan wajib diisi';
+			return;
+		}
+		try {
+			const result = await api.updateReportToken(selectedTeam, slug);
+			success = 'Link laporan disimpan';
+			reportSlug = result.token;
+			await loadIntegration();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Gagal simpan link';
+		}
+	}
+
+	async function resetReportSlug() {
+		const ok = await confirm({
+			title: 'Reset link laporan?',
+			message: 'Reset link ke default (slug nama tim/kas)? Link lama tidak akan valid lagi.',
+			confirmLabel: 'Reset',
+			color: 'red'
+		});
+		if (!ok) return;
+		error = '';
+		success = '';
+		try {
+			const result = await api.resetReportToken(selectedTeam);
+			success = 'Link direset: ' + result.report_url;
+			reportSlug = result.token;
+			toast.success('Link laporan direset');
+			await loadIntegration();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Gagal reset link';
+		}
+	}
+
+	function copyLink() {
+		if (reportPreviewUrl) {
+			navigator.clipboard.writeText(reportPreviewUrl);
+			success = 'Link disalin!';
+		}
+	}
+
+	$effect(() => {
+		load();
+		return () => {
+			stopQRPoll();
+			revokeTeleAvatar();
+			revokeWaAvatar();
+		};
+	});
+	$effect(() => {
+		if (selectedTeam) loadIntegration();
+	});
+</script>
+
+<svelte:head><title>Integrasi — KasQ</title></svelte:head>
+
+<Heading tag="h1" class="mb-4 text-xl sm:mb-6 sm:text-2xl">Integrasi</Heading>
+
+{#if error}<Alert color="red" class="mb-3">{error}</Alert>{/if}
+{#if success}<Alert color="green" class="mb-3">{success}</Alert>{/if}
+
+<div class="grid gap-6 lg:grid-cols-2">
+	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
+		<div class="mb-4 flex items-center justify-between">
+			<Heading tag="h2" class="text-lg">WhatsApp</Heading>
+			<Badge color={integration?.wa_enabled ? 'green' : 'gray'}>
+				{integration?.wa_enabled ? waStatus : 'OFF'}
+			</Badge>
+		</div>
+		<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">Hubungkan akun WA untuk menjadi Bot via QR code atau kode pairing.</p>
+		{#if integration?.wa_enabled && waStatus === 'connected' && (waPhone || waName)}
+			<div class="mb-4 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100">
+				{#if waPictureUrl}
+					<img
+						src={waPictureUrl}
+						alt=""
+						class="h-12 w-12 shrink-0 rounded-full border border-emerald-200 bg-white object-cover"
+					/>
+				{:else}
+					<div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-200 text-lg font-semibold text-emerald-800">
+						{(waName || waPhone || '?').slice(0, 1).toUpperCase()}
+					</div>
+				{/if}
+				<div>
+					<p class="font-medium">Akun terhubung</p>
+					{#if waName}
+						<p>{waName}</p>
+					{/if}
+					{#if waPhone}
+						<p class="font-mono text-emerald-800">{waPhone}</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
+		{#if integration?.wa_enabled && waStatus !== 'connected'}
+			<div class="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+				<button
+					type="button"
+					class="flex-1 rounded-md px-3 py-2 text-sm font-medium {waLoginTab === 'qr' ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-400'}"
+					onclick={() => (waLoginTab = 'qr')}
+				>
+					QR Code
+				</button>
+				<button
+					type="button"
+					class="flex-1 rounded-md px-3 py-2 text-sm font-medium {waLoginTab === 'pair' ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-400'}"
+					onclick={() => (waLoginTab = 'pair')}
+				>
+					Kode Pairing
+				</button>
+			</div>
+
+			{#if waLoginTab === 'qr'}
+				{#if waStatus === 'awaiting_login' || waStatus === 'disconnected'}
+					<Button color="light" class="mb-3" onclick={beginQRLogin}>Tampilkan QR Code</Button>
+				{/if}
+				{#if waQR && waStatus !== 'connected'}
+					<div class="rounded-lg border bg-white p-4 text-center">
+						<p class="mb-2 text-sm text-slate-500 dark:text-slate-400">Scan di WhatsApp → Perangkat Tertaut → Tautkan perangkat</p>
+						<p class="mb-3 text-xs text-amber-700">
+							QR berganti otomatis setiap <strong>{waQrTimeout}</strong> detik (QR pertama ~60 detik).
+							Seluruh sesi pairing berlangsung ~2,5 menit sebelum perlu muat ulang.
+						</p>
+						{#if waQR.startsWith('data:image')}
+							<img src={waQR} alt="WhatsApp QR" class="mx-auto h-64 w-64" />
+						{:else}
+							<p class="text-sm text-slate-400">Menunggu QR code...</p>
+						{/if}
+					</div>
+				{/if}
+			{:else}
+				<div class="space-y-3">
+					<div>
+						<Label for="waPairPhone">Nomor WhatsApp (format internasional)</Label>
+						<Input id="waPairPhone" class="font-mono" placeholder="62812xxxxxxx" bind:value={waPairPhone} />
+						<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Tanpa + dan tanpa 0 di depan. Nomor akun WA yang akan menautkan perangkat.</p>
+					</div>
+					<Button color="light" onclick={beginPairLogin}>Dapatkan Kode</Button>
+					{#if waPairCode}
+						<div class="rounded-lg border border-sky-200 bg-sky-50 p-4 text-center">
+							<p class="mb-1 text-sm text-slate-600">Masukkan kode di HP:</p>
+							<p class="text-2xl font-bold tracking-widest text-sky-900">{waPairCode}</p>
+							<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+								WhatsApp → Perangkat Tertaut → Tautkan perangkat → Tautkan dengan nomor telepon
+							</p>
+							{#if waPairExpires > 0}
+								<p class="mt-2 text-xs text-amber-700">Kode kedaluwarsa dalam ~{waPairExpires} detik</p>
+							{:else}
+								<p class="mt-2 text-xs text-red-600">Kode kedaluwarsa — klik &quot;Dapatkan Kode&quot; lagi</p>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/if}
+		{/if}
+		<div class="mb-4 flex flex-col gap-2 sm:flex-row">
+			<Button onclick={() => toggleWA(true)} disabled={integration?.wa_enabled}>Aktifkan WA</Button>
+			<Button color="light" onclick={() => toggleWA(false)} disabled={!integration?.wa_enabled}>Nonaktifkan</Button>
+		</div>
+	</Card>
+
+	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
+		<div class="mb-4 flex items-center justify-between">
+			<Heading tag="h2" class="text-lg">Telegram</Heading>
+			<Badge color={integration?.tele_enabled ? 'blue' : 'gray'}>
+				{integration?.tele_enabled ? 'ON' : 'OFF'}
+			</Badge>
+		</div>
+		{#if integration?.tele_enabled && (teleBotName || teleBotUsername || telePictureUrl)}
+			<div class="mb-4 flex items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+				{#if telePictureUrl}
+					<img
+						src={telePictureUrl}
+						alt=""
+						class="h-12 w-12 shrink-0 rounded-full border border-sky-200 bg-white object-cover"
+					/>
+				{:else}
+					<div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sky-200 text-lg font-semibold text-sky-800">
+						{(teleBotName || teleBotUsername || '?').slice(0, 1).toUpperCase()}
+					</div>
+				{/if}
+				<div>
+					<p class="font-medium">Bot aktif</p>
+					{#if teleBotName}
+						<p>{teleBotName}</p>
+					{/if}
+					{#if teleBotUsername}
+						<p class="font-mono text-sky-800">@{teleBotUsername}</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
+		<div class="space-y-3">
+			<div>
+				<Label for="teleToken">Bot Token</Label>
+				<div class="relative">
+					<Input
+						id="teleToken"
+						class="pr-10"
+						type={showTeleToken ? 'text' : 'password'}
+						placeholder="Token dari @BotFather"
+						bind:value={teleToken}
+						autocomplete="off"
+					/>
+					<button
+						type="button"
+						class="absolute inset-y-0 right-2 flex items-center px-1 text-slate-500 dark:text-slate-400 hover:text-slate-700"
+						onclick={() => (showTeleToken = !showTeleToken)}
+						title={showTeleToken ? 'Sembunyikan token' : 'Tampilkan token'}
+					>
+						{showTeleToken ? '🙈' : '👁'}
+					</button>
+				</div>
+			</div>
+			<div>
+				<Label for="teleChatId">Chat ID Grup atau Private</Label>
+				<Input
+					id="teleChatId"
+					class="font-mono text-sm"
+					placeholder="Contoh: -1001234567890 (kosongkan = semua chat)"
+					bind:value={teleChatId}
+				/>
+				<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+					Grup Telegram biasanya ID negatif. Jika salah, bot akan membalas Chat ID kamu saat dikirimi pesan.
+				</p>
+			</div>
+			<p class="text-xs text-slate-500 dark:text-slate-400">
+				Di grup: gunakan <strong>/saldo</strong> (disarankan) atau <strong>!saldo</strong>.
+				Jika <strong>!saldo</strong> tidak jalan, matikan <em>Group Privacy</em> di @BotFather → Bot Settings.
+			</p>
+			<div class="flex flex-col gap-2 sm:flex-row">
+				<Button onclick={() => saveTele(true)}>Aktifkan Tele</Button>
+				<Button color="light" onclick={() => saveTele(false)}>Nonaktifkan</Button>
+			</div>
+		</div>
+	</Card>
+</div>
+
+<Card size="xl" shadow="sm" class="mt-6 p-3 sm:p-4">
+	<Heading tag="h2" class="mb-2 text-lg">Link Laporan Finance</Heading>
+	<p class="mb-3 text-sm text-slate-500 dark:text-slate-400">
+		Link publik tanpa login untuk admin finance. Atur slug sendiri atau gunakan default slug tim/kas.
+	</p>
+	{#if integration}
+		<div class="space-y-3">
+			<div>
+				<Label for="reportSlug">Slug URL</Label>
+				<div class="flex flex-wrap items-center gap-2">
+					<span class="text-xs text-slate-500 dark:text-slate-400">/report/</span>
+					<Input
+						id="reportSlug"
+						class="flex-1 font-mono text-sm"
+						placeholder={integration.team_slug ?? 'kas-batam'}
+						bind:value={reportSlug}
+					/>
+				</div>
+				{#if integration.team_slug}
+					<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+						Default: <button type="button" class="text-emerald-700 underline" onclick={() => (reportSlug = integration?.team_slug ?? '')}>{integration.team_slug}</button>
+						{#if integration.team_name}
+							<span> (dari {integration.team_name})</span>
+						{/if}
+					</p>
+				{/if}
+			</div>
+			{#if integration.report_url || reportPreviewUrl}
+				<div class="flex flex-wrap items-center gap-2">
+					<Input class="flex-1 font-mono text-xs" readonly value={integration.report_url ?? reportPreviewUrl} />
+					<Button color="light" onclick={copyLink}>Copy</Button>
+				</div>
+			{/if}
+			<div class="flex flex-wrap gap-2">
+				<Button onclick={saveReportSlug}>Simpan Slug</Button>
+				<Button color="light" onclick={resetReportSlug}>Reset ke Default</Button>
+			</div>
+		</div>
+	{/if}
+</Card>
+
+<Card size="xl" shadow="sm" class="mt-6 p-3 sm:p-4">
+	<Heading tag="h2" class="mb-2">Command Bot</Heading>
+	<pre class="rounded-lg bg-slate-100 p-3 text-xs dark:bg-slate-800 dark:text-slate-300">/saldo
+!saldo (WA)</pre>
+	<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Cek saldo terkini via WA/Telegram</p>
+</Card>

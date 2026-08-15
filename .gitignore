@@ -1,0 +1,14 @@
+kasq-server
+kasq-server.exe
+backend/server
+backend/kasq-server
+# WA sessions (SQLite per tim) — sensitif & spesifik per environment
+backend/data/
+node_modules/
+.env
+.env.local
+deploy/deploy.env
+deploy/.staging/
+frontend/build/
+frontend/.svelte-kit/
+*.exe

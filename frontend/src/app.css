@@ -1,0 +1,47 @@
+@import "tailwindcss";
+@plugin "flowbite/plugin";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source "../node_modules/flowbite-svelte/dist";
+@source "../node_modules/flowbite-svelte-icons/dist";
+
+@theme {
+	--color-primary-50: #ecfdf5;
+	--color-primary-100: #d1fae5;
+	--color-primary-200: #a7f3d0;
+	--color-primary-300: #6ee7b7;
+	--color-primary-400: #34d399;
+	--color-primary-500: #10b981;
+	--color-primary-600: #059669;
+	--color-primary-700: #047857;
+	--color-primary-800: #065f46;
+	--color-primary-900: #064e3b;
+}
+
+body {
+	@apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-900 dark:text-slate-100;
+}
+
+.auth-shell {
+	@apply flex min-h-screen items-center justify-center bg-gradient-to-br from-primary-50 to-slate-100 px-4 py-8 dark:from-slate-950 dark:to-slate-900;
+}
+
+.ops-bottom-nav {
+	padding-bottom: env(safe-area-inset-bottom);
+}
+
+.ops-bottom-nav-fab {
+	box-shadow:
+		0 4px 14px rgb(5 150 105 / 0.35),
+		0 2px 6px rgb(15 23 42 / 0.12);
+}
+
+.dark .ops-bottom-nav-fab {
+	box-shadow:
+		0 4px 14px rgb(16 185 129 / 0.25),
+		0 2px 6px rgb(0 0 0 / 0.35);
+}
+
+.user-menu-dropdown ul {
+	@apply m-0 list-none p-0;
+}

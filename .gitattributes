@@ -1,0 +1,4 @@
+# Force Unix line endings for shell scripts (WSL/Linux)
+*.sh text eol=lf
+Makefile text eol=lf
+*.env.example text eol=lf
