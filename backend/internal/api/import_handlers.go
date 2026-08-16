@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/kasq/backend/internal/middleware"
 	"github.com/kasq/backend/internal/service"
 )
@@ -42,13 +44,50 @@ func (h *Handler) ImportTransactions(c *gin.Context) {
 
 	fetchNota := c.DefaultPostForm("fetch_nota", "true") != "false"
 	userID := middleware.GetUserID(c)
+	stream := c.DefaultQuery("stream", "") == "1" || c.DefaultQuery("stream", "") == "true" ||
+		c.DefaultPostForm("stream", "") == "1" || c.DefaultPostForm("stream", "") == "true"
 
-	result, err := h.svc.ImportTransactionsFromExcel(c.Request.Context(), teamID, userID, data, fetchNota)
+	if stream {
+		h.importTransactionsStream(c, teamID, userID, data, fetchNota)
+		return
+	}
+
+	result, err := h.svc.ImportTransactionsFromExcel(c.Request.Context(), teamID, userID, data, fetchNota, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) importTransactionsStream(c *gin.Context, teamID, userID uuid.UUID, data []byte, fetchNota bool) {
+	c.Header("Content-Type", "application/x-ndjson; charset=utf-8")
+	c.Header("Cache-Control", "no-cache, no-transform")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+
+	w := c.Writer
+	flusher, _ := w.(http.Flusher)
+
+	writeEvent := func(ev service.ImportProgressEvent) {
+		b, err := json.Marshal(ev)
+		if err != nil {
+			return
+		}
+		_, _ = w.Write(b)
+		_, _ = w.Write([]byte("\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
+	result, err := h.svc.ImportTransactionsFromExcel(c.Request.Context(), teamID, userID, data, fetchNota, writeEvent)
+	if err != nil {
+		writeEvent(service.ImportProgressEvent{Type: "error", Message: err.Error()})
+		return
+	}
+	writeEvent(service.ImportProgressEvent{Type: "done", Result: result})
 }
 
 func (h *Handler) ImportTemplate(c *gin.Context) {

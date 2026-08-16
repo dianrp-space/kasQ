@@ -98,3 +98,18 @@ export interface ImportResult {
 	errors: ImportRowError[];
 	balance: Balance;
 }
+
+export interface ImportProgressEvent {
+	type: 'progress' | 'done' | 'error';
+	phase?: 'prepare' | 'sheet' | 'row' | 'nota' | 'finish';
+	message?: string;
+	sheet?: string;
+	row?: number;
+	current?: number;
+	total?: number;
+	imported?: number;
+	failed?: number;
+	skipped?: number;
+	duplicates?: number;
+	result?: ImportResult;
+}

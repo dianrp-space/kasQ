@@ -22,6 +22,14 @@ var (
 	rupiahDigitsRe = regexp.MustCompile(`[^\d]`)
 	indonesianDays = []string{"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
 	hyperlinkURLRe = regexp.MustCompile(`(?i)(?:_xlfn\.)?HYPERLINK\s*\(\s*"([^"]+)"`)
+	importNotaHTTPClient = &http.Client{
+		Timeout: 25 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        32,
+			MaxIdleConnsPerHost: 16,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
 )
 
 type ImportRowError struct {
@@ -31,13 +39,36 @@ type ImportRowError struct {
 }
 
 type ImportResult struct {
-	Imported     int              `json:"imported"`
-	Failed       int              `json:"failed"`
-	Skipped      int              `json:"skipped"`
-	Duplicates   int              `json:"duplicates"`
-	SheetsUsed   int              `json:"sheets_used"`
-	Errors       []ImportRowError `json:"errors"`
-	Balance      *models.Balance  `json:"balance"`
+	Imported   int              `json:"imported"`
+	Failed     int              `json:"failed"`
+	Skipped    int              `json:"skipped"`
+	Duplicates int              `json:"duplicates"`
+	SheetsUsed int              `json:"sheets_used"`
+	Errors     []ImportRowError `json:"errors"`
+	Balance    *models.Balance  `json:"balance"`
+}
+
+type ImportProgressEvent struct {
+	Type       string        `json:"type"`
+	Phase      string        `json:"phase,omitempty"`
+	Message    string        `json:"message,omitempty"`
+	Sheet      string        `json:"sheet,omitempty"`
+	Row        int           `json:"row,omitempty"`
+	Current    int           `json:"current,omitempty"`
+	Total      int           `json:"total,omitempty"`
+	Imported   int           `json:"imported,omitempty"`
+	Failed     int           `json:"failed,omitempty"`
+	Skipped    int           `json:"skipped,omitempty"`
+	Duplicates int           `json:"duplicates,omitempty"`
+	Result     *ImportResult `json:"result,omitempty"`
+}
+
+type ImportProgressEmit func(ImportProgressEvent)
+
+func emitImportProgress(emit ImportProgressEmit, ev ImportProgressEvent) {
+	if emit != nil {
+		emit(ev)
+	}
 }
 
 type parsedImportRow struct {
@@ -50,7 +81,9 @@ type parsedImportRow struct {
 	NotaURL   string
 }
 
-func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userID uuid.UUID, data []byte, fetchNota bool) (*ImportResult, error) {
+func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userID uuid.UUID, data []byte, fetchNota bool, emit ImportProgressEmit) (*ImportResult, error) {
+	emitImportProgress(emit, ImportProgressEvent{Type: "progress", Phase: "prepare", Message: "Membaca file Excel..."})
+
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("file excel tidak valid")
@@ -62,8 +95,17 @@ func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userI
 		return nil, fmt.Errorf("file excel tidak punya sheet")
 	}
 
+	totalRows := countImportDataRows(f, sheets)
+	emitImportProgress(emit, ImportProgressEvent{
+		Type: "progress", Phase: "prepare", Message: fmt.Sprintf("Ditemukan ~%d baris data", totalRows), Total: totalRows,
+	})
+
 	result := &ImportResult{Errors: []ImportRowError{}}
 	var lastBalance *models.Balance
+
+	emitImportProgress(emit, ImportProgressEvent{
+		Type: "progress", Phase: "prepare", Message: "Memuat indeks duplikat...", Total: totalRows,
+	})
 
 	txKeys, err := s.repo.ListImportTxKeys(ctx, teamID)
 	if err != nil {
@@ -74,6 +116,7 @@ func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userI
 		existingKeys[importTxFingerprint(k.Tanggal, k.Jenis, k.Deskripsi, k.Total)] = struct{}{}
 	}
 	seenInFile := make(map[string]struct{})
+	current := 0
 
 	for _, sheet := range sheets {
 		rows, err := f.GetRows(sheet)
@@ -86,6 +129,13 @@ func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userI
 		}
 		result.SheetsUsed++
 
+		emitImportProgress(emit, ImportProgressEvent{
+			Type: "progress", Phase: "sheet", Sheet: sheet,
+			Message: fmt.Sprintf("Memproses sheet %q...", sheet),
+			Current: current, Total: totalRows,
+			Imported: result.Imported, Failed: result.Failed, Skipped: result.Skipped, Duplicates: result.Duplicates,
+		})
+
 		for i := headerRow + 1; i < len(rows); i++ {
 			rowNum := i + 1
 			row := rows[i]
@@ -93,15 +143,18 @@ func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userI
 				result.Skipped++
 				continue
 			}
+			current++
 
 			parsed, perr := parseImportRow(row, colMap, rowNum)
 			if perr != nil {
 				if perr.Error() == "empty" {
 					result.Skipped++
+					emitImportProgress(emit, importRowProgress(current, totalRows, sheet, rowNum, result, "Baris kosong, dilewati"))
 					continue
 				}
 				result.Failed++
 				result.Errors = append(result.Errors, ImportRowError{Sheet: sheet, Row: rowNum, Message: perr.Error()})
+				emitImportProgress(emit, importRowProgress(current, totalRows, sheet, rowNum, result, perr.Error()))
 				continue
 			}
 
@@ -115,18 +168,34 @@ func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userI
 			if _, ok := existingKeys[fp]; ok {
 				result.Duplicates++
 				result.Skipped++
+				emitImportProgress(emit, importRowProgress(current, totalRows, sheet, rowNum, result, "Duplikat, dilewati"))
 				continue
 			}
 			if _, ok := seenInFile[fp]; ok {
 				result.Duplicates++
 				result.Skipped++
+				emitImportProgress(emit, importRowProgress(current, totalRows, sheet, rowNum, result, "Duplikat dalam file, dilewati"))
 				continue
 			}
 			seenInFile[fp] = struct{}{}
 
 			var notaKey *string
 			if fetchNota && parsed.NotaURL != "" {
-				key, err := s.fetchAndUploadNotaURL(ctx, teamID, parsed.NotaURL)
+				rowNum := rowNum
+				emitImportProgress(emit, ImportProgressEvent{
+					Type: "progress", Phase: "nota", Sheet: sheet, Row: rowNum,
+					Message: fmt.Sprintf("Mengunduh nota baris %d...", rowNum),
+					Current: current, Total: totalRows,
+					Imported: result.Imported, Failed: result.Failed, Skipped: result.Skipped, Duplicates: result.Duplicates,
+				})
+				key, err := s.fetchAndUploadNotaURLWithHeartbeat(ctx, teamID, parsed.NotaURL, func() {
+					emitImportProgress(emit, ImportProgressEvent{
+						Type: "progress", Phase: "nota", Sheet: sheet, Row: rowNum,
+						Message: fmt.Sprintf("Masih mengunduh nota baris %d...", rowNum),
+						Current: current, Total: totalRows,
+						Imported: result.Imported, Failed: result.Failed, Skipped: result.Skipped, Duplicates: result.Duplicates,
+					})
+				})
 				if err != nil {
 					result.Errors = append(result.Errors, ImportRowError{
 						Sheet:   sheet,
@@ -154,12 +223,14 @@ func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userI
 			if err != nil {
 				result.Failed++
 				result.Errors = append(result.Errors, ImportRowError{Sheet: sheet, Row: rowNum, Message: err.Error()})
+				emitImportProgress(emit, importRowProgress(current, totalRows, sheet, rowNum, result, err.Error()))
 				continue
 			}
 			_ = tx
 			lastBalance = balance
 			existingKeys[fp] = struct{}{}
 			result.Imported++
+			emitImportProgress(emit, importRowProgress(current, totalRows, sheet, rowNum, result, truncateImportMsg(parsed.Deskripsi, 48)))
 		}
 	}
 
@@ -175,7 +246,84 @@ func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userI
 		lastBalance = balance
 	}
 	result.Balance = lastBalance
+	emitImportProgress(emit, ImportProgressEvent{
+		Type: "progress", Phase: "finish", Message: "Import selesai",
+		Current: totalRows, Total: totalRows,
+		Imported: result.Imported, Failed: result.Failed, Skipped: result.Skipped, Duplicates: result.Duplicates,
+	})
 	return result, nil
+}
+
+func importRowProgress(current, total int, sheet string, rowNum int, result *ImportResult, message string) ImportProgressEvent {
+	return ImportProgressEvent{
+		Type:       "progress",
+		Phase:      "row",
+		Sheet:      sheet,
+		Row:        rowNum,
+		Current:    current,
+		Total:      total,
+		Imported:   result.Imported,
+		Failed:     result.Failed,
+		Skipped:    result.Skipped,
+		Duplicates: result.Duplicates,
+		Message:    message,
+	}
+}
+
+func truncateImportMsg(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+func countImportDataRows(f *excelize.File, sheets []string) int {
+	total := 0
+	for _, sheet := range sheets {
+		rows, err := f.GetRows(sheet)
+		if err != nil || len(rows) == 0 {
+			continue
+		}
+		headerRow, _ := findImportHeader(rows)
+		if headerRow < 0 {
+			continue
+		}
+		for i := headerRow + 1; i < len(rows); i++ {
+			if !isImportSkipRow(rows[i]) {
+				total++
+			}
+		}
+	}
+	return total
+}
+
+func (s *Service) fetchAndUploadNotaURLWithHeartbeat(ctx context.Context, teamID uuid.UUID, rawURL string, heartbeat func()) (string, error) {
+	type fetchResult struct {
+		key string
+		err error
+	}
+	ch := make(chan fetchResult, 1)
+	go func() {
+		key, err := s.fetchAndUploadNotaURL(ctx, teamID, rawURL)
+		ch <- fetchResult{key, err}
+	}()
+
+	ticker := time.NewTicker(8 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case r := <-ch:
+			return r.key, r.err
+		case <-ticker.C:
+			if heartbeat != nil {
+				heartbeat()
+			}
+		}
+	}
 }
 
 func (s *Service) fetchAndUploadNotaURL(ctx context.Context, teamID uuid.UUID, rawURL string) (string, error) {
@@ -197,8 +345,7 @@ func (s *Service) fetchAndUploadNotaURL(ctx context.Context, teamID uuid.UUID, r
 	}
 	req.Header.Set("User-Agent", "KasQ-Import/1.0")
 	req.Header.Set("Accept", "image/*,*/*")
-	client := &http.Client{Timeout: 45 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := importNotaHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("gagal unduh: %w", err)
 	}

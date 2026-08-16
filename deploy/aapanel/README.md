@@ -42,6 +42,7 @@ exit
 # 5. deploy.env — set DEPLOY_FRONTEND=pm2 dan DEPLOY_PM2_USER=dianrp
 
 # 6. Nginx — tempel nginx-kasq.conf di aaPanel → Website → Config
+#    aaPanel → Website → Settings → Proxy timeout: 900 (hindari 504 saat import Excel)
 nginx -t && nginx -s reload
 ```
 

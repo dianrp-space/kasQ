@@ -127,6 +127,63 @@ export const api = {
 			method: 'POST',
 			body: form
 		}),
+	importTransactionsStream: async (
+		teamId: string,
+		form: FormData,
+		onProgress: (ev: import('./types').ImportProgressEvent) => void
+	): Promise<import('./types').ImportResult> => {
+		form.append('stream', 'true');
+		const res = await fetch(`${API_URL}/api/teams/${teamId}/transactions/import?stream=1`, {
+			method: 'POST',
+			body: form,
+			credentials: 'include'
+		});
+		if (!res.ok) {
+			if (res.status === 504) {
+				throw new ApiError(
+					'Gateway timeout (504). Sebagian transaksi mungkin sudah masuk — cek dashboard. Import ulang akan melewati duplikat. Untuk file besar, uncentang unduh nota dulu atau pecah per bulan.'
+				);
+			}
+			const err = await res.json().catch(() => ({ error: res.statusText }));
+			throw new ApiError(err.error || `Import gagal (HTTP ${res.status})`);
+		}
+		if (!res.body) {
+			throw new ApiError('Import gagal: respons kosong');
+		}
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		let finalResult: import('./types').ImportResult | null = null;
+
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() ?? '';
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				const ev = JSON.parse(line) as import('./types').ImportProgressEvent;
+				if (ev.type === 'error') {
+					throw new ApiError(ev.message || 'Import gagal');
+				}
+				if (ev.type === 'progress') {
+					onProgress(ev);
+				}
+				if (ev.type === 'done' && ev.result) {
+					finalResult = ev.result;
+					onProgress(ev);
+				}
+			}
+		}
+
+		if (!finalResult) {
+			throw new ApiError(
+				'Koneksi terputus sebelum import selesai. Sebagian data mungkin sudah masuk — cek dashboard lalu import ulang (duplikat otomatis dilewati).'
+			);
+		}
+		return finalResult;
+	},
 	downloadImportTemplate: async (teamId: string) => {
 		const res = await fetch(`${API_URL}/api/teams/${teamId}/transactions/import/template`, {
 			credentials: 'include'
