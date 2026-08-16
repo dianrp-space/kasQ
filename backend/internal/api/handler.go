@@ -815,10 +815,17 @@ func (h *Handler) GetIntegration(c *gin.Context) {
 	}
 	team, _ := h.repo.GetTeam(c.Request.Context(), teamID)
 	rt, _ := h.repo.GetReportToken(c.Request.Context(), teamID)
+	waStatus := integ.WAStatus
+	if integ.WAEnabled && h.waManager != nil {
+		if live, err := h.waManager.GetStatus(teamID); err == nil && live.Status != "" {
+			waStatus = live.Status
+		}
+	}
+
 	resp := gin.H{
 		"team_id":              integ.TeamID,
 		"wa_enabled":           integ.WAEnabled,
-		"wa_status":            integ.WAStatus,
+		"wa_status":            waStatus,
 		"wa_phone":             integ.WAPhone,
 		"wa_name":              integ.WAName,
 		"tele_enabled":         integ.TeleEnabled,
@@ -836,7 +843,7 @@ func (h *Handler) GetIntegration(c *gin.Context) {
 		resp["report_token"] = rt.Token
 		resp["report_url"] = h.appURL + "/report/" + rt.Token
 	}
-	if integ.WAStatus == "connected" && h.waManager != nil {
+	if waStatus == "connected" && h.waManager != nil {
 		name, pictureURL := h.waManager.GetWAProfile(teamID)
 		if name != "" {
 			resp["wa_name"] = name

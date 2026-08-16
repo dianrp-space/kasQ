@@ -335,9 +335,43 @@ func (m *Manager) StopTeam(teamID uuid.UUID) {
 	}
 }
 
+func (m *Manager) isAuthenticated(teamID uuid.UUID) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	s, ok := m.sessions[teamID]
+	return ok && s.client != nil && s.client.Store.ID != nil
+}
+
+func (m *Manager) reconcileConnectedStatus(teamID uuid.UUID) {
+	m.mu.RLock()
+	s, ok := m.sessions[teamID]
+	if !ok || s.client == nil || s.client.Store.ID == nil || !s.client.IsConnected() {
+		m.mu.RUnlock()
+		return
+	}
+	status := s.status
+	m.mu.RUnlock()
+
+	switch status {
+	case "connected", "qr", "pair_code":
+		return
+	default:
+		m.onConnected(teamID)
+	}
+}
+
 func (m *Manager) GetStatus(teamID uuid.UUID) (ConnectStatus, error) {
 	m.mu.RLock()
 	s, ok := m.sessions[teamID]
+	m.mu.RUnlock()
+	if !ok {
+		return ConnectStatus{Status: "disconnected"}, nil
+	}
+
+	m.reconcileConnectedStatus(teamID)
+
+	m.mu.RLock()
+	s, ok = m.sessions[teamID]
 	m.mu.RUnlock()
 	if !ok {
 		return ConnectStatus{Status: "disconnected"}, nil
@@ -563,12 +597,16 @@ func (m *Manager) handleEvent(teamID uuid.UUID, evt any) {
 	case *events.Message:
 		m.handleMessage(teamID, v)
 	case *events.Connected:
-		if m.sessionLoginMode(teamID) != "" {
+		if m.isAuthenticated(teamID) || m.sessionLoginMode(teamID) != "" {
 			m.onConnected(teamID)
 		}
 	case *events.Disconnected:
-		m.setStatus(teamID, "disconnected")
-		_ = m.repo.UpdateWAIntegration(context.Background(), teamID, true, "disconnected", nil, nil, nil)
+		if !m.isAuthenticated(teamID) {
+			m.setStatus(teamID, "disconnected")
+			_ = m.repo.UpdateWAIntegration(context.Background(), teamID, true, "disconnected", nil, nil, nil)
+			return
+		}
+		m.setStatus(teamID, "connecting")
 	}
 }
 

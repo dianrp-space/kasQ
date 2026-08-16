@@ -4,6 +4,7 @@
 	import { browser } from '$app/environment';
 	import { appSettings, loadAppSettings } from '$lib/appSettings.svelte';
 	import AppBrand from '$lib/components/AppBrand.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import type { PublicReport } from '$lib/types';
 	import TxTable from '$lib/components/TxTable.svelte';
 	import NotaPreviewModal from '$lib/components/NotaPreviewModal.svelte';
@@ -84,17 +85,18 @@
 <svelte:head><title>{appSettings.app_name} — Laporan Kas</title></svelte:head>
 
 <div class="min-h-screen bg-slate-50 dark:bg-slate-900">
-	<header class="border-b border-slate-200 bg-white px-4 py-4 pr-14 dark:border-slate-700 dark:bg-slate-900">
+	<header class="border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
 		<div class="mx-auto max-w-6xl">
-			<div class="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
 				<AppBrand size="sm" />
-				{#if report}
-					<p
-						class="text-sm font-semibold text-primary-700 dark:text-primary-400 sm:max-w-[45%] sm:shrink-0 sm:text-right"
-					>
-						{report.team.name}
-					</p>
-				{/if}
+				<div class="flex items-center justify-between gap-3 sm:justify-end">
+					{#if report}
+						<p class="text-sm font-semibold text-primary-700 dark:text-primary-400 sm:text-right">
+							{report.team.name}
+						</p>
+					{/if}
+					<ThemeToggle class="shrink-0 bg-white shadow-sm dark:bg-slate-800" />
+				</div>
 			</div>
 		</div>
 	</header>

@@ -21,6 +21,7 @@
 
 	const authPaths = ['/login', '/register', '/verify-email', '/forgot-password', '/reset-password'];
 	const isPublic = $derived($page.url.pathname.startsWith('/report/'));
+	const isReportPage = $derived($page.url.pathname.startsWith('/report/'));
 	const isAuthPage = $derived(authPaths.some((p) => $page.url.pathname.startsWith(p)));
 
 	const faviconHref = $derived(brandingUrl(appSettings.favicon_url) ?? defaultBrandImage);
@@ -82,9 +83,11 @@
 	</div>
 {:else if isPublic || isAuthPage}
 	<div class="relative">
-		<div class="fixed right-3 top-3 z-50 sm:right-4 sm:top-4">
-			<ThemeToggle class="bg-white/90 shadow-sm backdrop-blur dark:bg-slate-800/90" />
-		</div>
+		{#if !isReportPage}
+			<div class="fixed right-3 top-3 z-50 sm:right-4 sm:top-4">
+				<ThemeToggle class="bg-white/90 shadow-sm backdrop-blur dark:bg-slate-800/90" />
+			</div>
+		{/if}
 		{@render children()}
 	</div>
 	<ConfirmDialog />
