@@ -21,6 +21,7 @@
 		Tabs,
 		Textarea
 	} from 'flowbite-svelte';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
 
 	let teams = $state<Team[]>([]);
 	let users = $state<User[]>([]);
@@ -305,10 +306,10 @@
 				<form onsubmit={saveUser} class="space-y-3">
 					<Input placeholder="Nama" bind:value={userName} required />
 					<Input type="email" placeholder="Email" bind:value={userEmail} required />
-					<Input
-						type="password"
+					<PasswordInput
 						placeholder={editingUserId ? 'Password baru (kosongkan jika tidak ubah)' : 'Password'}
 						bind:value={userPassword}
+						autocomplete="new-password"
 					/>
 					<Select bind:value={userRole}>
 						<option value="ops">Ops</option>

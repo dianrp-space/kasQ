@@ -73,6 +73,34 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 	c.JSON(http.StatusOK, h.sanitizeUserWithAvatar(c, updated))
 }
 
+func (h *Handler) ChangePassword(c *gin.Context) {
+	user, err := h.getCurrentUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required,min=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.auth.ChangePassword(c.Request.Context(), user.ID, req.CurrentPassword, req.NewPassword); err != nil {
+		if err.Error() == "password lama salah" || err.Error() == "password minimal 6 karakter" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password berhasil diubah"})
+}
+
 func (h *Handler) GetMyAvatar(c *gin.Context) {
 	user, err := h.getCurrentUser(c)
 	if err != nil {

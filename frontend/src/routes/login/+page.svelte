@@ -4,6 +4,7 @@
 	import AppBrand from '$lib/components/AppBrand.svelte';
 	import { homePath } from '$lib/roles';
 	import { goto } from '$app/navigation';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import { Alert, Button, Card, Input, Label } from 'flowbite-svelte';
 	import { EnvelopeSolid } from 'flowbite-svelte-icons';
 
@@ -78,7 +79,7 @@
 					<Label for="password">Password</Label>
 					<a href="/forgot-password" class="text-xs text-primary-600 hover:underline">Lupa password?</a>
 				</div>
-				<Input id="password" type="password" bind:value={password} required autocomplete="current-password" />
+				<PasswordInput id="password" bind:value={password} required autocomplete="current-password" />
 			</div>
 
 			{#if error && !needsVerification}

@@ -2,7 +2,8 @@
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
-	import { Alert, Button, Card, Heading, Input, Label } from 'flowbite-svelte';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
+	import { Alert, Button, Card, Heading, Label } from 'flowbite-svelte';
 
 	let password = $state('');
 	let confirmPassword = $state('');
@@ -55,11 +56,11 @@
 			<form onsubmit={submit} class="space-y-4">
 				<div>
 					<Label for="password">Password Baru</Label>
-					<Input id="password" type="password" bind:value={password} required minlength={6} />
+					<PasswordInput id="password" bind:value={password} required minlength={6} autocomplete="new-password" />
 				</div>
 				<div>
 					<Label for="confirm">Konfirmasi Password</Label>
-					<Input id="confirm" type="password" bind:value={confirmPassword} required minlength={6} />
+					<PasswordInput id="confirm" bind:value={confirmPassword} required minlength={6} autocomplete="new-password" />
 				</div>
 				{#if error}<Alert color="red">{error}</Alert>{/if}
 				<Button type="submit" class="w-full" disabled={loading}>

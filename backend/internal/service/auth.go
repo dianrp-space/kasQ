@@ -104,6 +104,24 @@ func (a *AuthService) ResetPassword(ctx context.Context, token, password string)
 	return a.repo.UpdatePassword(ctx, user.ID, string(hash))
 }
 
+func (a *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error {
+	if len(newPassword) < 6 {
+		return fmt.Errorf("password minimal 6 karakter")
+	}
+	user, err := a.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)); err != nil {
+		return fmt.Errorf("password lama salah")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return a.repo.UpdatePassword(ctx, user.ID, string(hash))
+}
+
 func (a *AuthService) ResendVerification(ctx context.Context, emailAddr string) error {
 	user, err := a.repo.GetUserByEmail(ctx, emailAddr)
 	if err != nil {

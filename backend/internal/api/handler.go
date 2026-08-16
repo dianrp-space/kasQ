@@ -79,6 +79,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		{
 			protected.GET("/me", h.Me)
 			protected.PUT("/me", h.UpdateMe)
+			protected.PUT("/me/password", h.ChangePassword)
 			protected.GET("/me/avatar", h.GetMyAvatar)
 
 			protected.GET("/teams", h.ListTeams)

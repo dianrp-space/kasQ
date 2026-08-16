@@ -4,6 +4,7 @@
 	import { getContext } from 'svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { Avatar, Button, Card, Heading, Input, Label } from 'flowbite-svelte';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
 
 	let user = $state<User | null>(null);
 	let name = $state('');
@@ -13,6 +14,12 @@
 	let loading = $state(true);
 	let saving = $state(false);
 	let error = $state('');
+	let currentPassword = $state('');
+	let newPassword = $state('');
+	let confirmPassword = $state('');
+	let passwordSaving = $state(false);
+	let passwordError = $state('');
+	let passwordSuccess = $state('');
 
 	const refreshUser = getContext<() => Promise<void>>('refreshUser');
 
@@ -89,6 +96,29 @@
 		removeAvatar = true;
 	}
 
+	async function changePassword(e: Event) {
+		e.preventDefault();
+		passwordError = '';
+		passwordSuccess = '';
+		if (newPassword !== confirmPassword) {
+			passwordError = 'Konfirmasi password tidak cocok';
+			return;
+		}
+		passwordSaving = true;
+		try {
+			const res = await api.changePassword(currentPassword, newPassword);
+			passwordSuccess = res.message;
+			currentPassword = '';
+			newPassword = '';
+			confirmPassword = '';
+			toast.success('Password diubah');
+		} catch (err) {
+			passwordError = err instanceof Error ? err.message : 'Gagal ubah password';
+		} finally {
+			passwordSaving = false;
+		}
+	}
+
 	$effect(() => {
 		load();
 		return () => {
@@ -155,6 +185,50 @@
 
 			<Button type="submit" color="primary" disabled={saving}>
 				{saving ? 'Menyimpan...' : 'Simpan'}
+			</Button>
+		</form>
+	</Card>
+
+	<Card size="lg" shadow="sm" class="mt-6 max-w-xl p-4 sm:p-6">
+		<Heading tag="h2" class="mb-4 text-lg">Ganti Password</Heading>
+		<form onsubmit={changePassword} class="space-y-4">
+			<div>
+				<Label for="currentPassword">Password saat ini</Label>
+				<PasswordInput
+					id="currentPassword"
+					bind:value={currentPassword}
+					required
+					autocomplete="current-password"
+				/>
+			</div>
+			<div>
+				<Label for="newPassword">Password baru</Label>
+				<PasswordInput
+					id="newPassword"
+					bind:value={newPassword}
+					required
+					minlength={6}
+					autocomplete="new-password"
+				/>
+			</div>
+			<div>
+				<Label for="confirmPassword">Konfirmasi password baru</Label>
+				<PasswordInput
+					id="confirmPassword"
+					bind:value={confirmPassword}
+					required
+					minlength={6}
+					autocomplete="new-password"
+				/>
+			</div>
+			{#if passwordError}
+				<p class="text-sm text-red-600 dark:text-red-400">{passwordError}</p>
+			{/if}
+			{#if passwordSuccess}
+				<p class="text-sm text-emerald-600 dark:text-emerald-400">{passwordSuccess}</p>
+			{/if}
+			<Button type="submit" color="light" disabled={passwordSaving}>
+				{passwordSaving ? 'Menyimpan...' : 'Ubah Password'}
 			</Button>
 		</form>
 	</Card>

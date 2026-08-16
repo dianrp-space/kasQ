@@ -58,6 +58,11 @@ export const api = {
 	me: () => request<import('./types').User>('/api/me'),
 	updateMe: (form: FormData) =>
 		request<import('./types').User>('/api/me', { method: 'PUT', body: form }),
+	changePassword: (currentPassword: string, newPassword: string) =>
+		request<{ message: string }>('/api/me/password', {
+			method: 'PUT',
+			body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+		}),
 	getMyAvatar: async (): Promise<string | null> => {
 		const res = await fetch(`${API_URL}/api/me/avatar`, { credentials: 'include' });
 		if (!res.ok) return null;

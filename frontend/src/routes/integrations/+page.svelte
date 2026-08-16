@@ -5,6 +5,7 @@
 	import { toast } from '$lib/toast.svelte';
 	import { goto } from '$app/navigation';
 	import { Alert, Badge, Button, Card, Heading, Input, Label } from 'flowbite-svelte';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
 
 	let user = $state<User | null>(null);
 	let teams = $state<Team[]>([]);
@@ -15,7 +16,6 @@
 	let teleBotName = $state('');
 	let teleBotUsername = $state('');
 	let telePictureUrl = $state('');
-	let showTeleToken = $state(false);
 	let waQR = $state('');
 	let waStatus = $state('');
 	let waPhone = $state('');
@@ -444,24 +444,12 @@
 		<div class="space-y-3">
 			<div>
 				<Label for="teleToken">Bot Token</Label>
-				<div class="relative">
-					<Input
-						id="teleToken"
-						class="pr-10"
-						type={showTeleToken ? 'text' : 'password'}
-						placeholder="Token dari @BotFather"
-						bind:value={teleToken}
-						autocomplete="off"
-					/>
-					<button
-						type="button"
-						class="absolute inset-y-0 right-2 flex items-center px-1 text-slate-500 dark:text-slate-400 hover:text-slate-700"
-						onclick={() => (showTeleToken = !showTeleToken)}
-						title={showTeleToken ? 'Sembunyikan token' : 'Tampilkan token'}
-					>
-						{showTeleToken ? '🙈' : '👁'}
-					</button>
-				</div>
+				<PasswordInput
+					id="teleToken"
+					placeholder="Token dari @BotFather"
+					bind:value={teleToken}
+					autocomplete="off"
+				/>
 			</div>
 			<div>
 				<Label for="teleChatId">Chat ID Grup atau Private</Label>

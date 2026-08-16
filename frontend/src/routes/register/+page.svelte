@@ -2,6 +2,7 @@
 	import { api } from '$lib/api';
 	import { loadAppSettings } from '$lib/appSettings.svelte';
 	import AppBrand from '$lib/components/AppBrand.svelte';
+	import PasswordInput from '$lib/components/PasswordInput.svelte';
 	import { Alert, Button, Card, Heading, Input, Label } from 'flowbite-svelte';
 	import { CheckCircleSolid } from 'flowbite-svelte-icons';
 
@@ -70,11 +71,11 @@
 				</div>
 				<div>
 					<Label for="password">Password</Label>
-					<Input id="password" type="password" bind:value={password} required minlength={6} />
+					<PasswordInput id="password" bind:value={password} required minlength={6} autocomplete="new-password" />
 				</div>
 				<div>
 					<Label for="confirm">Konfirmasi Password</Label>
-					<Input id="confirm" type="password" bind:value={confirmPassword} required minlength={6} />
+					<PasswordInput id="confirm" bind:value={confirmPassword} required minlength={6} autocomplete="new-password" />
 				</div>
 				{#if error}<Alert color="red">{error}</Alert>{/if}
 				<Button type="submit" class="w-full" disabled={loading}>
