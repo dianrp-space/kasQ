@@ -36,6 +36,8 @@ DEPLOY_STRIP_SOURCEMAPS="${DEPLOY_STRIP_SOURCEMAPS:-true}"
 DEPLOY_RSYNC_COMPRESS="${DEPLOY_RSYNC_COMPRESS:-true}"
 DEPLOY_FRONTEND="${DEPLOY_FRONTEND:-pm2}"
 DEPLOY_PM2_USER="${DEPLOY_PM2_USER:-dianrp}"
+DEPLOY_PM2_APP_NAME="${DEPLOY_PM2_APP_NAME:-kasq-fe}"
+DEPLOY_PM2_BIN="${DEPLOY_PM2_BIN:-}"
 DEPLOY_PUBLIC_URL="${DEPLOY_PUBLIC_URL:-https://${DEPLOY_HOST}}"
 
 REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
@@ -182,28 +184,49 @@ wait_backend() {
 }
 '
 
-# shellcheck disable=SC2016
-PM2_RESTART='
+PM2_RESTART=$(cat <<EOF
 restart_pm2_frontend() {
-	local pm2_user="$1"
-	local app_path="$2"
-	local run_pm2
-	run_pm2() {
-		if [[ "$(id -un)" == "$pm2_user" ]]; then
-			bash -lc "$1"
-		else
-			sudo -u "$pm2_user" bash -lc "$1"
+	local pm2_user="\$1"
+	local app_path="\$2"
+	local pm2_app='${DEPLOY_PM2_APP_NAME}'
+	local pm2_bin='${DEPLOY_PM2_BIN}'
+	local pm2_home="/home/\${pm2_user}"
+
+	resolve_pm2_bin() {
+		if [[ -n "\$pm2_bin" && -x "\$pm2_bin" ]]; then
+			return 0
 		fi
+		pm2_bin=\$(su - "\${pm2_user}" -c 'command -v pm2' 2>/dev/null || true)
+		if [[ -n "\$pm2_bin" && -x "\$pm2_bin" ]]; then
+			return 0
+		fi
+		local candidate
+		shopt -s nullglob
+		for candidate in "\${pm2_home}/.nvm/versions/node/"*/bin/pm2; do
+			if [[ -x "\$candidate" ]]; then
+				pm2_bin="\$candidate"
+				return 0
+			fi
+		done
+		return 1
 	}
-	if ! run_pm2 "command -v pm2 >/dev/null"; then
-		echo "ERROR: pm2 tidak ditemukan untuk user ${pm2_user}."
-		echo "       Setup sekali: su - ${pm2_user} && cd ${app_path}/frontend && pm2 start ecosystem.config.cjs && pm2 save"
+
+	if ! resolve_pm2_bin; then
+		echo "ERROR: pm2 tidak ditemukan untuk user \${pm2_user}."
+		echo "       Set DEPLOY_PM2_BIN di deploy.env, mis.:"
+		echo "       DEPLOY_PM2_BIN=/home/dianrp/.nvm/versions/node/v24.19.0/bin/pm2"
 		return 1
 	fi
-	run_pm2 "cd \"${app_path}/frontend\" && pm2 startOrReload ecosystem.config.cjs --only kasq-frontend --update-env && pm2 save"
-	run_pm2 "pm2 status kasq-frontend" || true
+
+	echo "    PM2: \${pm2_bin}"
+	local node_bin
+	node_bin="\$(dirname "\$pm2_bin")"
+	echo "    Node: \${node_bin}"
+	su - "\${pm2_user}" -c "export PATH=\"\${node_bin}:\\\$PATH\"; cd '\${app_path}/frontend' && '\${pm2_bin}' startOrReload ecosystem.config.cjs --only \${pm2_app} --update-env && '\${pm2_bin}' save"
+	su - "\${pm2_user}" -c "export PATH=\"\${node_bin}:\\\$PATH\"; '\${pm2_bin}' status \${pm2_app}" || true
 }
-'
+EOF
+)
 
 if [[ "$DEPLOY_FRONTEND" == "pm2" ]]; then
 	RESTART_FRONTEND="restart_pm2_frontend '${DEPLOY_PM2_USER}' '${DEPLOY_PATH}'"
@@ -275,8 +298,8 @@ echo ""
 echo "==> Deploy selesai."
 echo "    Backend:  ${DEPLOY_PATH}/backend/kasq-server (systemd)"
 if [[ "$DEPLOY_FRONTEND" == "pm2" ]]; then
-	echo "    Frontend: ${DEPLOY_PATH}/frontend/build/ (PM2: kasq-frontend)"
-	echo "    Log FE:   su - ${DEPLOY_PM2_USER} -c 'pm2 logs kasq-frontend'"
+	echo "    Frontend: ${DEPLOY_PATH}/frontend/build/ (PM2: ${DEPLOY_PM2_APP_NAME})"
+	echo "    Log FE:   su - ${DEPLOY_PM2_USER} -c 'pm2 logs ${DEPLOY_PM2_APP_NAME}'"
 else
 	echo "    Frontend: ${DEPLOY_PATH}/frontend/build/ (systemd)"
 fi

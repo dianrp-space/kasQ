@@ -190,10 +190,7 @@ type TxFilter struct {
 	Offset    int
 }
 
-func (r *Repository) ListTransactions(ctx context.Context, f TxFilter) ([]models.Transaction, error) {
-	if f.Limit <= 0 {
-		f.Limit = 50
-	}
+func txFilterWhere(f TxFilter) (string, []any, int) {
 	args := []any{f.TeamID}
 	where := []string{"t.team_id = $1"}
 	idx := 2
@@ -212,6 +209,21 @@ func (r *Repository) ListTransactions(ctx context.Context, f TxFilter) ([]models
 		args = append(args, *f.DateTo)
 		idx++
 	}
+	return strings.Join(where, " AND "), args, idx
+}
+
+func (r *Repository) CountTransactions(ctx context.Context, f TxFilter) (int, error) {
+	where, args, _ := txFilterWhere(f)
+	var count int
+	err := r.pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM transactions t WHERE %s`, where), args...).Scan(&count)
+	return count, err
+}
+
+func (r *Repository) ListTransactions(ctx context.Context, f TxFilter) ([]models.Transaction, error) {
+	if f.Limit <= 0 {
+		f.Limit = 50
+	}
+	where, args, idx := txFilterWhere(f)
 	args = append(args, f.Limit, f.Offset)
 	query := fmt.Sprintf(`
 		SELECT t.id, t.team_id, t.created_by, t.hari, t.tanggal, t.jenis, t.deskripsi,
@@ -220,7 +232,7 @@ func (r *Repository) ListTransactions(ctx context.Context, f TxFilter) ([]models
 		LEFT JOIN users u ON u.id = t.created_by
 		WHERE %s
 		ORDER BY t.tanggal DESC, t.created_at DESC
-		LIMIT $%d OFFSET $%d`, strings.Join(where, " AND "), idx, idx+1)
+		LIMIT $%d OFFSET $%d`, where, idx, idx+1)
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -285,6 +297,31 @@ func (r *Repository) DeleteTransaction(ctx context.Context, teamID, txID uuid.UU
 		return ErrNotFound
 	}
 	return nil
+}
+
+type ImportTxKey struct {
+	Tanggal   time.Time
+	Jenis     models.TxJenis
+	Deskripsi string
+	Total     int64
+}
+
+func (r *Repository) ListImportTxKeys(ctx context.Context, teamID uuid.UUID) ([]ImportTxKey, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT tanggal, jenis, deskripsi, total FROM transactions WHERE team_id = $1`, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []ImportTxKey
+	for rows.Next() {
+		var k ImportTxKey
+		if err := rows.Scan(&k.Tanggal, &k.Jenis, &k.Deskripsi, &k.Total); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
 }
 
 func (r *Repository) GetBalance(ctx context.Context, teamID uuid.UUID, dateFrom, dateTo *time.Time) (*models.Balance, error) {

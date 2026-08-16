@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { api, ApiError } from '$lib/api';
-	import type { Team, User } from '$lib/types';
+	import type { ImportResult, Team, User } from '$lib/types';
 	import NoTeamBanner from '$lib/components/NoTeamBanner.svelte';
+	import TxImportModal from '$lib/components/TxImportModal.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { getDayName, HARI_LIST, toInputDate } from '$lib/utils';
 	import { goto } from '$app/navigation';
@@ -10,6 +11,7 @@
 	let user = $state<User | null>(null);
 	let teams = $state<Team[]>([]);
 	let selectedTeam = $state('');
+	let importOpen = $state(false);
 	let hari = $state(HARI_LIST[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
 	let tanggal = $state(toInputDate());
 	let jenis = $state<'in' | 'out'>('out');
@@ -81,11 +83,25 @@
 	$effect(() => {
 		load();
 	});
+
+	function onImported(res: ImportResult) {
+		if (res.imported > 0) {
+			toast.success(`Import selesai: ${res.imported} transaksi`);
+		}
+	}
 </script>
 
 <svelte:head><title>Input Transaksi — KasQ</title></svelte:head>
 
 <Heading tag="h1" class="mb-4 text-xl sm:mb-6 sm:text-2xl">Input Transaksi</Heading>
+
+<div class="mb-4 flex flex-wrap gap-2">
+	<Button color="light" disabled={needsTeam || !selectedTeam} onclick={() => (importOpen = true)}>
+		Import Excel
+	</Button>
+</div>
+
+<TxImportModal bind:open={importOpen} teamId={selectedTeam} onImported={onImported} />
 
 {#if needsTeam}
 	<div class="mb-6 max-w-2xl">
@@ -177,5 +193,8 @@
 	<Heading tag="h2" class="mb-2 text-base">Format WA/Telegram</Heading>
 	<pre class="overflow-x-auto rounded-lg bg-slate-100 p-3 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">out#Senin#100826#Beli air minum#12000#(Keterangan/opsional)
 in#Sabtu#010826#Refill kas Batam#2000000</pre>
-	<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Keterangan opsional. Untuk pengeluaran dengan nota, kirim foto dengan caption format di atas.</p>
+	<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+		Keterangan opsional. Untuk pengeluaran dengan nota, kirim foto dengan caption format di atas.
+		Rekap Excel lama? Pakai <strong>Import Excel</strong> — kolom Hari, Tanggal, Jenis, Deskripsi, Total, Link Nota.
+	</p>
 </Card>

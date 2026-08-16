@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -148,6 +149,45 @@ func (s *Service) DeleteTransaction(ctx context.Context, teamID, txID uuid.UUID)
 		_ = s.storage.Delete(ctx, *tx.NotaKey)
 	}
 	return s.repo.GetBalance(ctx, teamID, nil, nil)
+}
+
+type BatchDeleteResult struct {
+	Deleted int             `json:"deleted"`
+	Balance *models.Balance `json:"balance"`
+}
+
+func (s *Service) BatchDeleteTransactions(ctx context.Context, teamID uuid.UUID, txIDs []uuid.UUID) (*BatchDeleteResult, error) {
+	if len(txIDs) == 0 {
+		return nil, fmt.Errorf("tidak ada transaksi dipilih")
+	}
+	deleted := 0
+	for _, txID := range txIDs {
+		tx, err := s.repo.GetTransaction(ctx, teamID, txID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if err := s.repo.DeleteTransaction(ctx, teamID, txID); err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if tx.NotaKey != nil && *tx.NotaKey != "" {
+			_ = s.storage.Delete(ctx, *tx.NotaKey)
+		}
+		deleted++
+	}
+	if deleted == 0 {
+		return nil, repository.ErrNotFound
+	}
+	balance, err := s.repo.GetBalance(ctx, teamID, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &BatchDeleteResult{Deleted: deleted, Balance: balance}, nil
 }
 
 type CreateWebTxInput struct {

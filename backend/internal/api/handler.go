@@ -85,8 +85,11 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			protected.GET("/teams/:id/balance", h.GetBalance)
 			protected.GET("/teams/:id/transactions", h.ListTransactions)
 			protected.POST("/teams/:id/transactions", h.CreateTransaction)
+			protected.POST("/teams/:id/transactions/import", h.ImportTransactions)
+			protected.GET("/teams/:id/transactions/import/template", h.ImportTemplate)
 			protected.PUT("/teams/:id/transactions/:txId", h.UpdateTransaction)
 			protected.DELETE("/teams/:id/transactions/:txId", h.DeleteTransaction)
+			protected.POST("/teams/:id/transactions/batch-delete", h.BatchDeleteTransactions)
 			protected.GET("/teams/:id/integrations", h.GetIntegration)
 			protected.PUT("/teams/:id/integrations/wa", h.UpdateWA)
 			protected.POST("/teams/:id/integrations/wa/qr/start", h.StartWAQRLogin)
@@ -371,7 +374,22 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 		h.respondTeamForbidden(c)
 		return
 	}
-	filter := repository.TxFilter{TeamID: teamID, Limit: 100}
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			if n > 5000 {
+				n = 5000
+			}
+			limit = n
+		}
+	}
+	page := 1
+	if p := c.Query("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
+	}
+	filter := repository.TxFilter{TeamID: teamID, Limit: limit, Offset: (page - 1) * limit}
 	if j := c.Query("jenis"); j != "" {
 		jn := models.TxJenis(j)
 		filter.Jenis = &jn
@@ -386,12 +404,26 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 			filter.DateTo = &t
 		}
 	}
+	total, err := h.repo.CountTransactions(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	txs, err := h.repo.ListTransactions(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, txs)
+	if txs == nil {
+		txs = []models.Transaction{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items":  txs,
+		"total":  total,
+		"limit":  limit,
+		"page":   page,
+		"offset": filter.Offset,
+	})
 }
 
 func (h *Handler) CreateTransaction(c *gin.Context) {
@@ -610,6 +642,40 @@ func (h *Handler) DeleteTransaction(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "balance": balance})
+}
+
+func (h *Handler) BatchDeleteTransactions(c *gin.Context) {
+	teamID, err := parseTeamID(c)
+	if err != nil || !h.canAccessTeam(c, teamID) {
+		h.respondTeamForbidden(c)
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || len(body.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ids wajib (array UUID transaksi)"})
+		return
+	}
+	txIDs := make([]uuid.UUID, 0, len(body.IDs))
+	for _, raw := range body.IDs {
+		id, err := uuid.Parse(strings.TrimSpace(raw))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id transaksi tidak valid: " + raw})
+			return
+		}
+		txIDs = append(txIDs, id)
+	}
+	result, err := h.svc.BatchDeleteTransactions(c.Request.Context(), teamID, txIDs)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "transaksi tidak ditemukan"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "deleted": result.Deleted, "balance": result.Balance})
 }
 
 func (h *Handler) GetNotaURL(c *gin.Context) {

@@ -48,6 +48,14 @@ export interface Transaction {
 	creator_name?: string;
 }
 
+export interface TransactionListResponse {
+	items: Transaction[];
+	total: number;
+	limit: number;
+	page: number;
+	offset: number;
+}
+
 export interface Integration {
 	team_id: string;
 	wa_enabled: boolean;
@@ -73,4 +81,20 @@ export interface PublicReport {
 	team: Team;
 	balance: Balance;
 	transactions: Transaction[];
+}
+
+export interface ImportRowError {
+	row: number;
+	sheet?: string;
+	message: string;
+}
+
+export interface ImportResult {
+	imported: number;
+	failed: number;
+	skipped: number;
+	duplicates: number;
+	sheets_used: number;
+	errors: ImportRowError[];
+	balance: Balance;
 }

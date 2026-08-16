@@ -26,6 +26,25 @@ export function getCurrentMonthRange(date: Date = new Date()): { from: string; t
 	return { from: toInputDate(start), to: toInputDate(end) };
 }
 
+/** Nilai untuk input type="month" (YYYY-MM). */
+export function toInputMonth(d: Date = new Date()): string {
+	const y = d.getFullYear();
+	const m = String(d.getMonth() + 1).padStart(2, '0');
+	return `${y}-${m}`;
+}
+
+/** Rentang tanggal dari input bulan (YYYY-MM). */
+export function getMonthRange(monthInput: string): { from: string; to: string } {
+	const match = /^(\d{4})-(\d{2})$/.exec(monthInput);
+	if (!match) return getCurrentMonthRange();
+	const y = Number(match[1]);
+	const m = Number(match[2]);
+	if (m < 1 || m > 12) return getCurrentMonthRange();
+	const start = new Date(y, m - 1, 1);
+	const end = new Date(y, m, 0);
+	return { from: toInputDate(start), to: toInputDate(end) };
+}
+
 export function formatMonthLabel(from: string): string {
 	return new Date(from + 'T00:00:00').toLocaleDateString('id-ID', {
 		month: 'long',

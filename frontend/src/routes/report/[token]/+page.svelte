@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
+	import { browser } from '$app/environment';
 	import { appSettings, loadAppSettings } from '$lib/appSettings.svelte';
 	import AppBrand from '$lib/components/AppBrand.svelte';
 	import type { PublicReport } from '$lib/types';
@@ -8,35 +9,46 @@
 	import NotaPreviewModal from '$lib/components/NotaPreviewModal.svelte';
 	import BalanceCards from '$lib/components/BalanceCards.svelte';
 	import DashboardChart from '$lib/components/DashboardChart.svelte';
-	import { formatMonthLabel, getCurrentMonthRange } from '$lib/utils';
-	import { Alert, Button, Card, Heading, Input, Label, Select, Spinner } from 'flowbite-svelte';
-
-	const defaultMonth = getCurrentMonthRange();
+	import { formatMonthLabel, getMonthRange, toInputMonth } from '$lib/utils';
+	import { Alert, Button, Card, Heading, Label, Select, Spinner } from 'flowbite-svelte';
+	import MonthPeriodFilter from '$lib/components/MonthPeriodFilter.svelte';
+	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
 
 	let report = $state<PublicReport | null>(null);
 	let error = $state('');
 	let filterJenis = $state('');
-	let filterFrom = $state(defaultMonth.from);
-	let filterTo = $state(defaultMonth.to);
+	let filterMonth = $state(toInputMonth());
 	let notaPreviewOpen = $state(false);
 	let notaPreviewUrl = $state('');
 	let notaDownloadKey = $state('');
 
 	const token = $derived($page.params.token ?? '');
-	const periodLabel = $derived(formatMonthLabel(filterFrom));
+	const periodRange = $derived(getMonthRange(filterMonth));
+	const periodLabel = $derived(formatMonthLabel(periodRange.from));
 
 	async function load() {
 		if (!token) return;
 		try {
-			const params: Record<string, string> = {};
+			const params: Record<string, string> = {
+				date_from: periodRange.from,
+				date_to: periodRange.to
+			};
 			if (filterJenis) params.jenis = filterJenis;
-			if (filterFrom) params.date_from = filterFrom;
-			if (filterTo) params.date_to = filterTo;
 			report = await api.getPublicReport(token, params);
 			error = '';
 		} catch {
 			error = 'Laporan tidak ditemukan atau token tidak valid';
 		}
+	}
+
+	function applyFilter() {
+		if (browser) {
+			const url = new URL(window.location.href);
+			url.searchParams.set('month', filterMonth);
+			history.replaceState(history.state, '', url);
+		}
+		load();
 	}
 
 	async function viewNota(key: string) {
@@ -60,7 +72,11 @@
 		loadAppSettings();
 	});
 
-	$effect(() => {
+	onMount(() => {
+		const qMonth = get(page).url.searchParams.get('month');
+		if (qMonth && /^\d{4}-\d{2}$/.test(qMonth)) {
+			filterMonth = qMonth;
+		}
 		load();
 	});
 </script>
@@ -97,17 +113,18 @@
 						<p class="text-xs text-slate-500">Periode: {periodLabel}</p>
 					</div>
 					<div class="grid grid-cols-2 gap-2 md:contents">
+						<div class="col-span-2 md:max-w-[180px]">
+							<MonthPeriodFilter bind:value={filterMonth} />
+						</div>
 						<div class="col-span-2 md:max-w-[140px]">
-							<Label for="filter-jenis" class="sr-only">Jenis</Label>
+							<Label for="filter-jenis" class="mb-1 block text-xs text-slate-500 dark:text-slate-400">Jenis</Label>
 							<Select id="filter-jenis" bind:value={filterJenis} placeholder="Semua jenis" class="w-full">
 								<option value="">Semua jenis</option>
 								<option value="in">Pemasukan</option>
 								<option value="out">Pengeluaran</option>
 							</Select>
 						</div>
-						<Input id="filter-from" type="date" bind:value={filterFrom} class="md:max-w-[160px]" />
-						<Input id="filter-to" type="date" bind:value={filterTo} class="md:max-w-[160px]" />
-						<Button color="light" class="col-span-2 md:col-span-1" onclick={load}>Filter</Button>
+						<Button color="light" class="col-span-2 md:col-span-1" onclick={applyFilter}>Terapkan</Button>
 					</div>
 				</div>
 				<TxTable transactions={report.transactions} onViewNota={viewNota} onDownloadNota={downloadNota} />

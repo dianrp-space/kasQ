@@ -100,7 +100,7 @@ export const api = {
 	},
 	getTransactions: (teamId: string, params?: Record<string, string>) => {
 		const qs = params ? '?' + new URLSearchParams(params).toString() : '';
-		return request<import('./types').Transaction[]>(`/api/teams/${teamId}/transactions${qs}`);
+		return request<import('./types').TransactionListResponse>(`/api/teams/${teamId}/transactions${qs}`);
 	},
 	createTransaction: (teamId: string, form: FormData) =>
 		request<{ transaction: import('./types').Transaction; balance: import('./types').Balance }>(
@@ -117,6 +117,32 @@ export const api = {
 			`/api/teams/${teamId}/transactions/${txId}`,
 			{ method: 'DELETE' }
 		),
+	batchDeleteTransactions: (teamId: string, ids: string[]) =>
+		request<{ ok: boolean; deleted: number; balance: import('./types').Balance }>(
+			`/api/teams/${teamId}/transactions/batch-delete`,
+			{ method: 'POST', body: JSON.stringify({ ids }) }
+		),
+	importTransactions: (teamId: string, form: FormData) =>
+		request<import('./types').ImportResult>(`/api/teams/${teamId}/transactions/import`, {
+			method: 'POST',
+			body: form
+		}),
+	downloadImportTemplate: async (teamId: string) => {
+		const res = await fetch(`${API_URL}/api/teams/${teamId}/transactions/import/template`, {
+			credentials: 'include'
+		});
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ error: res.statusText }));
+			throw new ApiError(err.error || 'Gagal unduh template');
+		}
+		const blob = await res.blob();
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'kasq-import-template.xlsx';
+		a.click();
+		URL.revokeObjectURL(url);
+	},
 
 	getIntegration: (teamId: string) =>
 		request<import('./types').Integration>(`/api/teams/${teamId}/integrations`),

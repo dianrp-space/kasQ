@@ -75,11 +75,17 @@ install-frontend:
 	@echo "Done. Run: make dev"
 
 kill-ports:
-	@for port in $(BACKEND_PORT) $(FRONTEND_PORT); do fuser -k "$$port/tcp" 2>/dev/null || true; done
-	@pkill -f "go run.*cmd/server" 2>/dev/null || true
-	@pkill -f "vite dev" 2>/dev/null || true
-	@sleep 1
-	@echo "Ports cleared."
+	@set -euo pipefail; \
+	for port in $(BACKEND_PORT) $(FRONTEND_PORT); do \
+		if command -v fuser >/dev/null 2>&1; then \
+			fuser -k "$$port/tcp" 2>/dev/null || true; \
+		elif command -v lsof >/dev/null 2>&1; then \
+			pids=$$(lsof -ti tcp:"$$port" 2>/dev/null || true); \
+			[[ -n "$$pids" ]] && kill $$pids 2>/dev/null || true; \
+		fi; \
+	done; \
+	sleep 1; \
+	echo "Ports cleared."
 
 deps:
 	cd backend && go mod tidy
