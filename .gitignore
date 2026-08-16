@@ -9,6 +9,7 @@ node_modules/
 .env.local
 deploy/deploy.env
 deploy/.staging/
+deploy/.cache/
 frontend/build/
 frontend/.svelte-kit/
 *.exe

@@ -1,4 +1,4 @@
-.PHONY: help setup setup-db setup-env deps dev dev-backend dev-frontend build build-backend build-frontend test minio kill-ports install-frontend fix-crlf run-prod-backend run-prod-frontend deploy
+.PHONY: help setup setup-db setup-env deps dev dev-backend dev-frontend build build-backend build-frontend test minio kill-ports install-frontend fix-crlf run-prod-backend run-prod-frontend deploy deploy-backend deploy-frontend
 
 SHELL := /bin/bash
 ROOT := $(shell pwd)
@@ -22,6 +22,8 @@ help:
 	@echo "  make test         Run backend tests"
 	@echo "  make build        Build backend + frontend"
 	@echo "  make deploy       Build lokal + upload artefak ke server (deploy/deploy.env)"
+	@echo "  make deploy-backend   Deploy hanya backend Go (lebih cepat)"
+	@echo "  make deploy-frontend  Deploy hanya frontend SvelteKit"
 
 setup: setup-env deps
 
@@ -160,3 +162,11 @@ run-prod-frontend:
 deploy:
 	@sed -i 's/\r$$//' deploy/deploy.sh 2>/dev/null || true
 	@bash deploy/deploy.sh
+
+deploy-backend:
+	@sed -i 's/\r$$//' deploy/deploy.sh 2>/dev/null || true
+	@DEPLOY_ONLY=backend bash deploy/deploy.sh
+
+deploy-frontend:
+	@sed -i 's/\r$$//' deploy/deploy.sh 2>/dev/null || true
+	@DEPLOY_ONLY=frontend bash deploy/deploy.sh

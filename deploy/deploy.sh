@@ -34,6 +34,9 @@ DEPLOY_GOOS="${DEPLOY_GOOS:-linux}"
 DEPLOY_GOARCH="${DEPLOY_GOARCH:-amd64}"
 DEPLOY_STRIP_SOURCEMAPS="${DEPLOY_STRIP_SOURCEMAPS:-true}"
 DEPLOY_RSYNC_COMPRESS="${DEPLOY_RSYNC_COMPRESS:-true}"
+DEPLOY_SKIP_NPM_CI="${DEPLOY_SKIP_NPM_CI:-auto}"
+DEPLOY_PARALLEL_BUILD="${DEPLOY_PARALLEL_BUILD:-true}"
+DEPLOY_ONLY="${DEPLOY_ONLY:-all}"
 DEPLOY_FRONTEND="${DEPLOY_FRONTEND:-pm2}"
 DEPLOY_PM2_USER="${DEPLOY_PM2_USER:-dianrp}"
 DEPLOY_PM2_APP_NAME="${DEPLOY_PM2_APP_NAME:-kasq-fe}"
@@ -104,67 +107,142 @@ rsync_opts_for() {
 
 echo "==> KasQ deploy → ${REMOTE}:${DEPLOY_PATH}"
 echo "    Backend: systemd (${DEPLOY_RUN_USER}) | Frontend: ${DEPLOY_FRONTEND} (${FRONTEND_OWNER})"
+echo "    Mode: ${DEPLOY_ONLY} | npm ci: ${DEPLOY_SKIP_NPM_CI} | parallel build: ${DEPLOY_PARALLEL_BUILD}"
+echo "    (deploy tidak menjalankan svelte-check/TS — hanya vite build + go build)"
 
-echo "==> [1/4] Build backend (${DEPLOY_GOOS}/${DEPLOY_GOARCH})..."
-mkdir -p "$STAGING/backend"
-(
-	cd "$ROOT/backend"
-	GOOS="$DEPLOY_GOOS" GOARCH="$DEPLOY_GOARCH" CGO_ENABLED=0 \
-		go build -ldflags="-s -w" -o "$STAGING/backend/kasq-server" ./cmd/server
-)
+NPM_CACHE_DIR="$ROOT/deploy/.cache"
+NPM_LOCK_HASH_FILE="$NPM_CACHE_DIR/npm-lock.sha256"
+mkdir -p "$NPM_CACHE_DIR"
 
-echo "==> [2/4] Build frontend..."
-if [[ -f "$ROOT/frontend/.env.production" ]]; then
-	echo "    Pakai frontend/.env.production"
-else
-	echo "    (tips) Buat frontend/.env.production — PUBLIC_API_URL kosong untuk same-origin"
-fi
-(
-	cd "$ROOT/frontend"
-	if [[ -f package-lock.json ]]; then npm ci; else npm install; fi
-	npm run build
-)
-rm -rf "$STAGING/frontend"
-mkdir -p "$STAGING/frontend"
-cp -a "$ROOT/frontend/build" "$STAGING/frontend/"
-sed "s|__KASQ_ORIGIN__|${DEPLOY_PUBLIC_URL}|g" \
-	"$ROOT/deploy/aapanel/ecosystem.config.cjs" >"$STAGING/frontend/ecosystem.config.cjs"
-echo "    PM2 ORIGIN=${DEPLOY_PUBLIC_URL}"
-
-if [[ "$DEPLOY_STRIP_SOURCEMAPS" == "true" ]]; then
-	map_count="$(find "$STAGING/frontend/build" -name '*.map' | wc -l | tr -d ' ')"
-	if [[ "$map_count" != "0" ]]; then
-		find "$STAGING/frontend/build" -name '*.map' -delete
-		echo "    Hapus ${map_count} file *.map (tidak dipakai di production)"
+should_run_npm_ci() {
+	local lock_file="$ROOT/frontend/package-lock.json"
+	if [[ ! -f "$lock_file" ]]; then
+		return 0
 	fi
-fi
+	if [[ "$DEPLOY_SKIP_NPM_CI" == "true" ]]; then
+		return 1
+	fi
+	if [[ "$DEPLOY_SKIP_NPM_CI" == "false" ]]; then
+		return 0
+	fi
+	# auto: skip jika lockfile tidak berubah dan node_modules ada
+	if [[ ! -d "$ROOT/frontend/node_modules" ]]; then
+		return 0
+	fi
+	local current_hash
+	current_hash="$(sha256sum "$lock_file" | awk '{print $1}')"
+	if [[ -f "$NPM_LOCK_HASH_FILE" ]] && [[ "$(cat "$NPM_LOCK_HASH_FILE")" == "$current_hash" ]]; then
+		return 1
+	fi
+	return 0
+}
 
-echo "==> [3/4] Upload artefak (rsync)..."
+build_backend() {
+	echo "==> Build backend (${DEPLOY_GOOS}/${DEPLOY_GOARCH})..."
+	mkdir -p "$STAGING/backend"
+	(
+		cd "$ROOT/backend"
+		GOOS="$DEPLOY_GOOS" GOARCH="$DEPLOY_GOARCH" CGO_ENABLED=0 \
+			go build -ldflags="-s -w" -o "$STAGING/backend/kasq-server" ./cmd/server
+	)
+}
+
+build_frontend() {
+	echo "==> Build frontend..."
+	if [[ -f "$ROOT/frontend/.env.production" ]]; then
+		echo "    Pakai frontend/.env.production"
+	else
+		echo "    (tips) Buat frontend/.env.production — PUBLIC_API_URL kosong untuk same-origin"
+	fi
+	(
+		cd "$ROOT/frontend"
+		if should_run_npm_ci; then
+			echo "    npm ci (package-lock berubah atau node_modules belum ada)..."
+			if [[ -f package-lock.json ]]; then npm ci; else npm install; fi
+			if [[ -f package-lock.json ]]; then
+				sha256sum package-lock.json | awk '{print $1}' >"$NPM_LOCK_HASH_FILE"
+			fi
+		else
+			echo "    npm ci dilewati — lockfile sama, pakai node_modules lokal"
+		fi
+		npm run build
+	)
+	rm -rf "$STAGING/frontend"
+	mkdir -p "$STAGING/frontend"
+	cp -a "$ROOT/frontend/build" "$STAGING/frontend/"
+	sed "s|__KASQ_ORIGIN__|${DEPLOY_PUBLIC_URL}|g" \
+		"$ROOT/deploy/aapanel/ecosystem.config.cjs" >"$STAGING/frontend/ecosystem.config.cjs"
+	echo "    PM2 ORIGIN=${DEPLOY_PUBLIC_URL}"
+
+	if [[ "$DEPLOY_STRIP_SOURCEMAPS" == "true" ]]; then
+		map_count="$(find "$STAGING/frontend/build" -name '*.map' | wc -l | tr -d ' ')"
+		if [[ "$map_count" != "0" ]]; then
+			find "$STAGING/frontend/build" -name '*.map' -delete
+			echo "    Hapus ${map_count} file *.map (tidak dipakai di production)"
+		fi
+	fi
+}
+
+case "$DEPLOY_ONLY" in
+	all)
+		if [[ "$DEPLOY_PARALLEL_BUILD" == "true" ]]; then
+			echo "==> [1-2/4] Build backend + frontend (parallel)..."
+			build_backend &
+			BB=$!
+			build_frontend &
+			BF=$!
+			wait "$BB" "$BF"
+		else
+			echo "==> [1/4] Build backend..."
+			build_backend
+			echo "==> [2/4] Build frontend..."
+			build_frontend
+		fi
+		;;
+	backend)
+		echo "==> [1/2] Build backend saja (DEPLOY_ONLY=backend)..."
+		build_backend
+		;;
+	frontend)
+		echo "==> [1/2] Build frontend saja (DEPLOY_ONLY=frontend)..."
+		build_frontend
+		;;
+	*)
+		echo "ERROR: DEPLOY_ONLY tidak valid: $DEPLOY_ONLY (gunakan all|backend|frontend)"
+		exit 1
+		;;
+esac
+
+echo "==> Upload artefak (rsync)..."
 ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p '${DEPLOY_PATH}/backend/data/wa-sessions' '${DEPLOY_PATH}/frontend/build'"
 
-rsync_opts_for "$DEPLOY_RUN_USER" BACKEND_RSYNC
-rsync "${BACKEND_RSYNC[@]}" \
-	"$STAGING/backend/kasq-server" \
-	"${REMOTE}:${DEPLOY_PATH}/backend/kasq-server"
-
-rsync_opts_for "$FRONTEND_OWNER" FRONTEND_RSYNC
-rsync "${FRONTEND_RSYNC[@]}" \
-	"$STAGING/frontend/build/" \
-	"${REMOTE}:${DEPLOY_PATH}/frontend/build/"
-
-# ecosystem.config.cjs — tanpa --delete
-ECOSYSTEM_RSYNC=(-rlptD)
-if [[ "$DEPLOY_IS_ROOT" == "true" ]]; then
-	ECOSYSTEM_RSYNC+=(--chown="${FRONTEND_OWNER}:${FRONTEND_OWNER}" --no-owner --no-group)
+if [[ "$DEPLOY_ONLY" == "all" || "$DEPLOY_ONLY" == "backend" ]]; then
+	rsync_opts_for "$DEPLOY_RUN_USER" BACKEND_RSYNC
+	rsync "${BACKEND_RSYNC[@]}" \
+		"$STAGING/backend/kasq-server" \
+		"${REMOTE}:${DEPLOY_PATH}/backend/kasq-server"
 fi
-if [[ "$DEPLOY_RSYNC_COMPRESS" == "true" ]]; then
-	ECOSYSTEM_RSYNC+=(-z --compress-level=1)
-fi
-rsync "${ECOSYSTEM_RSYNC[@]}" \
-	"$STAGING/frontend/ecosystem.config.cjs" \
-	"${REMOTE}:${DEPLOY_PATH}/frontend/ecosystem.config.cjs"
 
-echo "==> [4/4] Set permission & restart..."
+if [[ "$DEPLOY_ONLY" == "all" || "$DEPLOY_ONLY" == "frontend" ]]; then
+	rsync_opts_for "$FRONTEND_OWNER" FRONTEND_RSYNC
+	rsync "${FRONTEND_RSYNC[@]}" \
+		"$STAGING/frontend/build/" \
+		"${REMOTE}:${DEPLOY_PATH}/frontend/build/"
+
+	# ecosystem.config.cjs — tanpa --delete
+	ECOSYSTEM_RSYNC=(-rlptD)
+	if [[ "$DEPLOY_IS_ROOT" == "true" ]]; then
+		ECOSYSTEM_RSYNC+=(--chown="${FRONTEND_OWNER}:${FRONTEND_OWNER}" --no-owner --no-group)
+	fi
+	if [[ "$DEPLOY_RSYNC_COMPRESS" == "true" ]]; then
+		ECOSYSTEM_RSYNC+=(-z --compress-level=1)
+	fi
+	rsync "${ECOSYSTEM_RSYNC[@]}" \
+		"$STAGING/frontend/ecosystem.config.cjs" \
+		"${REMOTE}:${DEPLOY_PATH}/frontend/ecosystem.config.cjs"
+fi
+
+echo "==> Set permission & restart..."
 # shellcheck disable=SC2016
 WAIT_BACKEND='
 wait_backend() {
@@ -251,20 +329,29 @@ ${WAIT_BACKEND}
 ${PM2_RESTART}
 RUN_USER='${DEPLOY_RUN_USER}'
 FE_USER='${FRONTEND_OWNER}'
-chmod +x '${DEPLOY_PATH}/backend/kasq-server'
-mkdir -p '${DEPLOY_PATH}/backend/data/wa-sessions'
-chown "\${RUN_USER}:\${RUN_USER}" '${DEPLOY_PATH}/backend/kasq-server'
-chown -R "\${FE_USER}:\${FE_USER}" '${DEPLOY_PATH}/frontend/build' '${DEPLOY_PATH}/frontend/ecosystem.config.cjs'
-chown -R "\${RUN_USER}:\${RUN_USER}" '${DEPLOY_PATH}/backend/data/wa-sessions'
-if [[ -f '${DEPLOY_PATH}/backend/.env' ]]; then
-	chown "\${RUN_USER}:\${RUN_USER}" '${DEPLOY_PATH}/backend/.env'
-	chmod 640 '${DEPLOY_PATH}/backend/.env'
+DEPLOY_ONLY='${DEPLOY_ONLY}'
+if [[ "\$DEPLOY_ONLY" == "all" || "\$DEPLOY_ONLY" == "backend" ]]; then
+	chmod +x '${DEPLOY_PATH}/backend/kasq-server'
+	mkdir -p '${DEPLOY_PATH}/backend/data/wa-sessions'
+	chown "\${RUN_USER}:\${RUN_USER}" '${DEPLOY_PATH}/backend/kasq-server'
+	chown -R "\${RUN_USER}:\${RUN_USER}" '${DEPLOY_PATH}/backend/data/wa-sessions'
+	if [[ -f '${DEPLOY_PATH}/backend/.env' ]]; then
+		chown "\${RUN_USER}:\${RUN_USER}" '${DEPLOY_PATH}/backend/.env'
+		chmod 640 '${DEPLOY_PATH}/backend/.env'
+	fi
+fi
+if [[ "\$DEPLOY_ONLY" == "all" || "\$DEPLOY_ONLY" == "frontend" ]]; then
+	chown -R "\${FE_USER}:\${FE_USER}" '${DEPLOY_PATH}/frontend/build' '${DEPLOY_PATH}/frontend/ecosystem.config.cjs'
 fi
 if [[ "${DEPLOY_RESTART}" == "true" ]]; then
-	systemctl restart kasq-backend
-	${RESTART_FRONTEND} || true
-	wait_backend
-	${WAIT_FRONTEND}
+	if [[ "\$DEPLOY_ONLY" == "all" || "\$DEPLOY_ONLY" == "backend" ]]; then
+		systemctl restart kasq-backend
+		wait_backend
+	fi
+	if [[ "\$DEPLOY_ONLY" == "all" || "\$DEPLOY_ONLY" == "frontend" ]]; then
+		${RESTART_FRONTEND} || true
+		${WAIT_FRONTEND}
+	fi
 fi
 EOF
 )
@@ -273,15 +360,24 @@ else
 set -e
 ${WAIT_BACKEND}
 ${PM2_RESTART}
-chmod 755 '${DEPLOY_PATH}/backend/kasq-server'
-chmod -R a+rX '${DEPLOY_PATH}/frontend/build'
-mkdir -p '${DEPLOY_PATH}/backend/data/wa-sessions'
-chmod 777 '${DEPLOY_PATH}/backend/data/wa-sessions'
+DEPLOY_ONLY='${DEPLOY_ONLY}'
+if [[ "\$DEPLOY_ONLY" == "all" || "\$DEPLOY_ONLY" == "backend" ]]; then
+	chmod 755 '${DEPLOY_PATH}/backend/kasq-server'
+	mkdir -p '${DEPLOY_PATH}/backend/data/wa-sessions'
+	chmod 777 '${DEPLOY_PATH}/backend/data/wa-sessions'
+fi
+if [[ "\$DEPLOY_ONLY" == "all" || "\$DEPLOY_ONLY" == "frontend" ]]; then
+	chmod -R a+rX '${DEPLOY_PATH}/frontend/build'
+fi
 if [[ "${DEPLOY_RESTART}" == "true" ]]; then
 	if sudo -n systemctl restart kasq-backend 2>/dev/null; then
-		${RESTART_FRONTEND} || true
-		wait_backend
-		${WAIT_FRONTEND}
+		if [[ "\$DEPLOY_ONLY" == "all" || "\$DEPLOY_ONLY" == "backend" ]]; then
+			wait_backend
+		fi
+		if [[ "\$DEPLOY_ONLY" == "all" || "\$DEPLOY_ONLY" == "frontend" ]]; then
+			${RESTART_FRONTEND} || true
+			${WAIT_FRONTEND}
+		fi
 	else
 		echo ""
 		echo "WARN: restart backend gagal — sudo butuh password interaktif."
