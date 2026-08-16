@@ -339,6 +339,11 @@ func (s *Service) fetchAndUploadNotaURL(ctx context.Context, teamID uuid.UUID, r
 		return "", fmt.Errorf("skema url harus http/https")
 	}
 
+	localRoots := loadImportNotaLocalRoots()
+	if body, filename, contentType, ok := tryReadLocalNotaFile(u, localRoots); ok {
+		return s.UploadNota(ctx, teamID, filename, body, contentType)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", err
