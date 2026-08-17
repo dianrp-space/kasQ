@@ -45,14 +45,15 @@ jobs:
 
       - name: Prepare deploy.env & SSH
         env:
-          DEPLOY_ENV_BLOB: ${{ secrets['.deploy.env'] }}
+          DEPLOY_ENV_BLOB: ${{ secrets.DEPLOY_ENV }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_ONLY_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_only || '' }}
         run: |
           set -euo pipefail
           if [[ -z "${DEPLOY_ENV_BLOB:-}" ]]; then
-            echo "ERROR: GitHub secret .deploy.env belum diset"
-            echo "       Salin isi deploy/deploy.env lokal ke secret tersebut."
+            echo "ERROR: GitHub secret DEPLOY_ENV belum diset"
+            echo "       Salin isi deploy/deploy.env lokal ke secret DEPLOY_ENV."
+            echo "       (Nama secret GitHub hanya boleh huruf, angka, underscore — tanpa titik.)"
             exit 1
           fi
           if [[ -z "${DEPLOY_SSH_KEY:-}" ]]; then
