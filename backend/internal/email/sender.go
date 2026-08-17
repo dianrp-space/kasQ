@@ -90,14 +90,15 @@ func (s *Sender) Send(to, subject, bodyHTML, bodyPlain string) error {
 
 	msg := s.buildMessage(to, subject, bodyHTML, bodyPlain)
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
-	auth := smtp.PlainAuth("", s.cfg.User, s.cfg.Password, s.cfg.Host)
+	authHost := s.authHost()
+	auth := smtp.PlainAuth("", s.cfg.User, s.cfg.Password, authHost)
 
 	var err error
 	switch {
 	case s.cfg.Port == 465:
-		err = sendSMTPS(addr, s.cfg.Host, auth, s.envelopeFrom, to, msg)
+		err = sendSMTPS(addr, s.tlsConfig(), auth, s.envelopeFrom, to, msg)
 	default:
-		err = sendSTARTTLS(addr, s.cfg.Host, auth, s.envelopeFrom, to, msg)
+		err = sendSTARTTLS(addr, s.tlsConfig(), auth, s.envelopeFrom, to, msg)
 	}
 	if err != nil {
 		log.Printf("smtp: send to %s failed: %v", to, err)
@@ -107,21 +108,40 @@ func (s *Sender) Send(to, subject, bodyHTML, bodyPlain string) error {
 	return nil
 }
 
-func sendSTARTTLS(addr, host string, auth smtp.Auth, from, to string, msg []byte) error {
+func (s *Sender) authHost() string {
+	if s.cfg.TLSServerName != "" {
+		return s.cfg.TLSServerName
+	}
+	return s.cfg.Host
+}
+
+func (s *Sender) tlsConfig() *tls.Config {
+	serverName := s.cfg.TLSServerName
+	if serverName == "" {
+		serverName = s.cfg.Host
+	}
+	return &tls.Config{
+		ServerName:         serverName,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: s.cfg.SkipTLSVerify,
+	}
+}
+
+func sendSTARTTLS(addr string, tlsCfg *tls.Config, auth smtp.Auth, from, to string, msg []byte) error {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer conn.Close()
 
-	client, err := smtp.NewClient(conn, host)
+	client, err := smtp.NewClient(conn, tlsCfg.ServerName)
 	if err != nil {
 		return fmt.Errorf("smtp client: %w", err)
 	}
 	defer client.Close()
 
 	if ok, _ := client.Extension("STARTTLS"); ok {
-		if err = client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+		if err = client.StartTLS(tlsCfg); err != nil {
 			return fmt.Errorf("starttls: %w", err)
 		}
 	}
@@ -154,12 +174,12 @@ func sendSTARTTLS(addr, host string, auth smtp.Auth, from, to string, msg []byte
 	return client.Quit()
 }
 
-func sendSMTPS(addr, host string, auth smtp.Auth, from, to string, msg []byte) error {
-	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+func sendSMTPS(addr string, tlsCfg *tls.Config, auth smtp.Auth, from, to string, msg []byte) error {
+	conn, err := tls.Dial("tcp", addr, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("tls dial: %w", err)
 	}
-	client, err := smtp.NewClient(conn, host)
+	client, err := smtp.NewClient(conn, tlsCfg.ServerName)
 	if err != nil {
 		return fmt.Errorf("smtp client: %w", err)
 	}

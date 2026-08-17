@@ -27,12 +27,14 @@ type MinIOConfig struct {
 }
 
 type SMTPConfig struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	From     string
-	Enabled  bool
+	Host          string
+	Port          int
+	User          string
+	Password      string
+	From          string
+	TLSServerName string
+	SkipTLSVerify bool
+	Enabled       bool
 }
 
 func Load() *Config {
@@ -63,12 +65,14 @@ func Load() *Config {
 			PublicUseSSL:   publicUseSSL,
 		},
 		SMTP: SMTPConfig{
-			Host:     smtpHost,
-			Port:     smtpPort,
-			User:     smtpUser,
-			Password: smtpPass,
-			From:     trimQuotes(getEnv("SMTP_FROM", smtpUser)),
-			Enabled:  smtpHost != "" && smtpUser != "" && smtpPass != "",
+			Host:          smtpHost,
+			Port:          smtpPort,
+			User:          smtpUser,
+			Password:      smtpPass,
+			From:          trimQuotes(getEnv("SMTP_FROM", smtpUser)),
+			TLSServerName: getEnv("SMTP_TLS_SERVER_NAME", ""),
+			SkipTLSVerify: os.Getenv("SMTP_INSECURE_SKIP_VERIFY") == "true",
+			Enabled:       smtpHost != "" && smtpUser != "" && smtpPass != "",
 		},
 		JWTSecret: getEnv("JWT_SECRET", "dev-jwt-secret-change-in-production"),
 		AppURL:    getEnv("APP_URL", "http://localhost:3008"),
