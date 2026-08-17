@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/kasq/backend/internal/config"
@@ -14,8 +15,9 @@ import (
 )
 
 type MinIOStorage struct {
-	client *minio.Client
-	bucket string
+	client        *minio.Client
+	presignClient *minio.Client
+	bucket        string
 }
 
 func New(cfg config.MinIOConfig) (*MinIOStorage, error) {
@@ -26,7 +28,25 @@ func New(cfg config.MinIOConfig) (*MinIOStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("minio client: %w", err)
 	}
-	s := &MinIOStorage{client: client, bucket: cfg.Bucket}
+
+	presignClient := client
+	if cfg.PublicEndpoint != "" &&
+		(cfg.PublicEndpoint != cfg.Endpoint || cfg.PublicUseSSL != cfg.UseSSL) {
+		presignClient, err = minio.New(cfg.PublicEndpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+			Secure: cfg.PublicUseSSL,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("minio presign client: %w", err)
+		}
+		scheme := "http"
+		if cfg.PublicUseSSL {
+			scheme = "https"
+		}
+		log.Printf("minio: presigned URLs use public endpoint %s://%s", scheme, cfg.PublicEndpoint)
+	}
+
+	s := &MinIOStorage{client: client, presignClient: presignClient, bucket: cfg.Bucket}
 	ctx := context.Background()
 	exists, err := client.BucketExists(ctx, cfg.Bucket)
 	if err != nil {
@@ -50,7 +70,7 @@ func (s *MinIOStorage) Upload(ctx context.Context, key string, data []byte, cont
 }
 
 func (s *MinIOStorage) PresignedViewURL(ctx context.Context, key string) (string, error) {
-	u, err := s.client.PresignedGetObject(ctx, s.bucket, key, 15*time.Minute, nil)
+	u, err := s.presignClient.PresignedGetObject(ctx, s.bucket, key, 15*time.Minute, nil)
 	if err != nil {
 		return "", err
 	}
@@ -92,8 +112,12 @@ func (s *MinIOStorage) GetObject(ctx context.Context, key string) (io.ReadCloser
 
 func (s *MinIOStorage) PresignedDownloadURL(ctx context.Context, key string) (string, error) {
 	reqParams := make(map[string][]string)
-	reqParams["response-content-disposition"] = []string{fmt.Sprintf("attachment; filename=\"%s\"", key)}
-	u, err := s.client.PresignedGetObject(ctx, s.bucket, key, 15*time.Minute, reqParams)
+	filename := key
+	if idx := strings.LastIndex(key, "/"); idx >= 0 && idx+1 < len(key) {
+		filename = key[idx+1:]
+	}
+	reqParams["response-content-disposition"] = []string{fmt.Sprintf("attachment; filename=\"%s\"", filename)}
+	u, err := s.presignClient.PresignedGetObject(ctx, s.bucket, key, 15*time.Minute, reqParams)
 	if err != nil {
 		return "", err
 	}

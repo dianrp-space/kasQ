@@ -17,11 +17,13 @@ type Config struct {
 }
 
 type MinIOConfig struct {
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	Bucket    string
-	UseSSL    bool
+	Endpoint       string
+	PublicEndpoint string
+	AccessKey      string
+	SecretKey      string
+	Bucket         string
+	UseSSL         bool
+	PublicUseSSL   bool
 }
 
 type SMTPConfig struct {
@@ -38,6 +40,13 @@ func Load() *Config {
 		getEnv("MINIO_ENDPOINT", "localhost:9000"),
 		os.Getenv("MINIO_USE_SSL") == "true",
 	)
+	publicEndpoint, publicUseSSL := endpoint, useSSL
+	if rawPublic := getEnv("MINIO_PUBLIC_ENDPOINT", ""); rawPublic != "" {
+		publicEndpoint, publicUseSSL = parseMinIOEndpoint(
+			rawPublic,
+			os.Getenv("MINIO_PUBLIC_USE_SSL") == "true",
+		)
+	}
 	smtpPort, _ := strconv.Atoi(getEnv("SMTP_PORT", "587"))
 	smtpHost := getEnv("SMTP_HOST", "")
 	smtpUser := getEnv("SMTP_USER", "")
@@ -45,11 +54,13 @@ func Load() *Config {
 	return &Config{
 		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres@localhost:5432/kasq?sslmode=disable"),
 		MinIO: MinIOConfig{
-			Endpoint:  endpoint,
-			AccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
-			SecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
-			Bucket:    getEnv("MINIO_BUCKET", "kasq"),
-			UseSSL:    useSSL,
+			Endpoint:       endpoint,
+			PublicEndpoint: publicEndpoint,
+			AccessKey:      getEnv("MINIO_ACCESS_KEY", "minioadmin"),
+			SecretKey:      getEnv("MINIO_SECRET_KEY", "minioadmin"),
+			Bucket:         getEnv("MINIO_BUCKET", "kasq"),
+			UseSSL:         useSSL,
+			PublicUseSSL:   publicUseSSL,
 		},
 		SMTP: SMTPConfig{
 			Host:     smtpHost,

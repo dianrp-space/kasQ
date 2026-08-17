@@ -9,6 +9,8 @@
 #
 # Deploy:
 #   make deploy
+#
+# GitHub Actions: push ke main → .github/workflows/deploy.yml
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

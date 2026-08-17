@@ -24,6 +24,8 @@ help:
 	@echo "  make deploy       Build lokal + upload artefak ke server (deploy/deploy.env)"
 	@echo "  make deploy-backend   Deploy hanya backend Go (lebih cepat)"
 	@echo "  make deploy-frontend  Deploy hanya frontend SvelteKit"
+	@echo ""
+	@echo "  CI: push ke main → GitHub Actions (.github/workflows/deploy.yml)"
 
 setup: setup-env deps
 

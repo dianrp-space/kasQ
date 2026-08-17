@@ -1,0 +1,105 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+    inputs:
+      deploy_only:
+        description: Deploy target
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
+        default: all
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Prepare deploy.env & SSH
+        env:
+          DEPLOY_ENV_BLOB: ${{ secrets['.deploy.env'] }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_ONLY_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_only || '' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DEPLOY_ENV_BLOB:-}" ]]; then
+            echo "ERROR: GitHub secret .deploy.env belum diset"
+            echo "       Salin isi deploy/deploy.env lokal ke secret tersebut."
+            exit 1
+          fi
+          if [[ -z "${DEPLOY_SSH_KEY:-}" ]]; then
+            echo "ERROR: GitHub secret DEPLOY_SSH_KEY belum diset (isi private key OpenSSH)"
+            exit 1
+          fi
+
+          mkdir -p deploy .ssh
+          printf '%s\n' "$DEPLOY_ENV_BLOB" > deploy/deploy.env
+          sed -i 's/\r$//' deploy/deploy.env
+
+          printf '%s\n' "$DEPLOY_SSH_KEY" > .ssh/id_deploy
+          chmod 700 .ssh
+          chmod 600 .ssh/id_deploy
+
+          ci_key_path="${GITHUB_WORKSPACE}/.ssh/id_deploy"
+          if grep -q '^DEPLOY_SSH_KEY=' deploy/deploy.env; then
+            sed -i "s|^DEPLOY_SSH_KEY=.*|DEPLOY_SSH_KEY=${ci_key_path}|" deploy/deploy.env
+          else
+            echo "DEPLOY_SSH_KEY=${ci_key_path}" >> deploy/deploy.env
+          fi
+
+          if [[ -n "$DEPLOY_ONLY_INPUT" ]]; then
+            if grep -q '^DEPLOY_ONLY=' deploy/deploy.env; then
+              sed -i "s|^DEPLOY_ONLY=.*|DEPLOY_ONLY=${DEPLOY_ONLY_INPUT}|" deploy/deploy.env
+            else
+              echo "DEPLOY_ONLY=${DEPLOY_ONLY_INPUT}" >> deploy/deploy.env
+            fi
+          fi
+
+          if grep -q '^DEPLOY_SKIP_NPM_CI=' deploy/deploy.env; then
+            sed -i 's|^DEPLOY_SKIP_NPM_CI=.*|DEPLOY_SKIP_NPM_CI=false|' deploy/deploy.env
+          else
+            echo 'DEPLOY_SKIP_NPM_CI=false' >> deploy/deploy.env
+          fi
+
+          set -a
+          # shellcheck disable=SC1091
+          source deploy/deploy.env
+          set +a
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          port="${DEPLOY_PORT:-22}"
+          ssh-keyscan -p "$port" "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          sed -i 's/\r$//' deploy/deploy.sh
+          bash deploy/deploy.sh
