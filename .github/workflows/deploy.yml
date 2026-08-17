@@ -1,3 +1,6 @@
+# Values live in the GitHub Environment named `.deploy.env`
+# (Settings → Environments). Same secret/variable names as deploy/deploy.env locally.
+
 name: Deploy
 
 on:
@@ -20,11 +23,15 @@ concurrency:
   group: deploy-production
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Deploy to production
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: .deploy.env
 
     steps:
       - name: Checkout
@@ -45,50 +52,42 @@ jobs:
 
       - name: Prepare deploy.env & SSH
         env:
-          DEPLOY_ENV_BLOB: ${{ secrets.DEPLOY_ENV }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER || vars.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || vars.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH }}
+          DEPLOY_PUBLIC_URL: ${{ secrets.DEPLOY_PUBLIC_URL || vars.DEPLOY_PUBLIC_URL }}
+          DEPLOY_RUN_USER: ${{ secrets.DEPLOY_RUN_USER || vars.DEPLOY_RUN_USER }}
+          DEPLOY_FRONTEND: ${{ secrets.DEPLOY_FRONTEND || vars.DEPLOY_FRONTEND }}
+          DEPLOY_PM2_USER: ${{ secrets.DEPLOY_PM2_USER || vars.DEPLOY_PM2_USER }}
+          DEPLOY_PM2_BIN: ${{ secrets.DEPLOY_PM2_BIN || vars.DEPLOY_PM2_BIN }}
+          DEPLOY_PM2_APP_NAME: ${{ secrets.DEPLOY_PM2_APP_NAME || vars.DEPLOY_PM2_APP_NAME }}
+          DEPLOY_RESTART: ${{ secrets.DEPLOY_RESTART || vars.DEPLOY_RESTART }}
+          DEPLOY_GOOS: ${{ secrets.DEPLOY_GOOS || vars.DEPLOY_GOOS }}
+          DEPLOY_GOARCH: ${{ secrets.DEPLOY_GOARCH || vars.DEPLOY_GOARCH }}
+          DEPLOY_STRIP_SOURCEMAPS: ${{ secrets.DEPLOY_STRIP_SOURCEMAPS || vars.DEPLOY_STRIP_SOURCEMAPS }}
+          DEPLOY_RSYNC_COMPRESS: ${{ secrets.DEPLOY_RSYNC_COMPRESS || vars.DEPLOY_RSYNC_COMPRESS }}
+          DEPLOY_PARALLEL_BUILD: ${{ secrets.DEPLOY_PARALLEL_BUILD || vars.DEPLOY_PARALLEL_BUILD }}
+          DEPLOY_SSH_KEY_CONTENT: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_ONLY_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_only || '' }}
         run: |
           set -euo pipefail
-          if [[ -z "${DEPLOY_ENV_BLOB:-}" ]]; then
-            echo "ERROR: GitHub secret DEPLOY_ENV belum diset"
-            echo "       Salin isi deploy/deploy.env lokal ke secret DEPLOY_ENV."
-            echo "       (Nama secret GitHub hanya boleh huruf, angka, underscore — tanpa titik.)"
-            exit 1
-          fi
-          if [[ -z "${DEPLOY_SSH_KEY:-}" ]]; then
-            echo "ERROR: GitHub secret DEPLOY_SSH_KEY belum diset (isi private key OpenSSH)"
-            exit 1
-          fi
+          : "${DEPLOY_HOST:?Missing DEPLOY_HOST in Environment .deploy.env}"
+          : "${DEPLOY_USER:?Missing DEPLOY_USER in Environment .deploy.env}"
+          : "${DEPLOY_PATH:?Missing DEPLOY_PATH in Environment .deploy.env}"
+          : "${DEPLOY_SSH_KEY_CONTENT:?Missing DEPLOY_SSH_KEY in Environment .deploy.env}"
 
-          mkdir -p deploy .ssh
-          printf '%s\n' "$DEPLOY_ENV_BLOB" > deploy/deploy.env
-          sed -i 's/\r$//' deploy/deploy.env
-
-          printf '%s\n' "$DEPLOY_SSH_KEY" > .ssh/id_deploy
-          chmod 700 .ssh
+          mkdir -p .ssh deploy
+          umask 077
+          printf '%s\n' "$DEPLOY_SSH_KEY_CONTENT" > .ssh/id_deploy
           chmod 600 .ssh/id_deploy
 
-          ci_key_path="${GITHUB_WORKSPACE}/.ssh/id_deploy"
-          if grep -q '^DEPLOY_SSH_KEY=' deploy/deploy.env; then
-            sed -i "s|^DEPLOY_SSH_KEY=.*|DEPLOY_SSH_KEY=${ci_key_path}|" deploy/deploy.env
-          else
-            echo "DEPLOY_SSH_KEY=${ci_key_path}" >> deploy/deploy.env
-          fi
+          export DEPLOY_SSH_KEY="${GITHUB_WORKSPACE}/.ssh/id_deploy"
+          export DEPLOY_ONLY="${DEPLOY_ONLY_INPUT:-all}"
+          export DEPLOY_SKIP_NPM_CI=false
 
-          if [[ -n "$DEPLOY_ONLY_INPUT" ]]; then
-            if grep -q '^DEPLOY_ONLY=' deploy/deploy.env; then
-              sed -i "s|^DEPLOY_ONLY=.*|DEPLOY_ONLY=${DEPLOY_ONLY_INPUT}|" deploy/deploy.env
-            else
-              echo "DEPLOY_ONLY=${DEPLOY_ONLY_INPUT}" >> deploy/deploy.env
-            fi
-          fi
-
-          if grep -q '^DEPLOY_SKIP_NPM_CI=' deploy/deploy.env; then
-            sed -i 's|^DEPLOY_SKIP_NPM_CI=.*|DEPLOY_SKIP_NPM_CI=false|' deploy/deploy.env
-          else
-            echo 'DEPLOY_SKIP_NPM_CI=false' >> deploy/deploy.env
-          fi
+          sed -i 's/\r$//' deploy/write-deploy-env.sh
+          bash deploy/write-deploy-env.sh
 
           set -a
           # shellcheck disable=SC1091
