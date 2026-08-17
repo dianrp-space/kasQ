@@ -18,22 +18,7 @@
 	);
 
 	$effect(() => {
-		let active = true;
-		const hasAvatar = user.has_avatar;
-
-		(async () => {
-			if (!hasAvatar) {
-				avatarUrl = null;
-				return;
-			}
-			const url = await api.getMyAvatar();
-			if (!active) return;
-			avatarUrl = url;
-		})();
-
-		return () => {
-			active = false;
-		};
+		avatarUrl = user.has_avatar ? api.getMyAvatar() : null;
 	});
 </script>
 

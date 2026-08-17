@@ -111,12 +111,14 @@ func (h *Handler) GetMyAvatar(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "avatar not available"})
 		return
 	}
-	url, err := h.svc.GetAssetViewURL(c.Request.Context(), *user.AvatarFile)
+	reader, contentType, err := h.svc.OpenAsset(c.Request.Context(), *user.AvatarFile)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "avatar not available"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"url": url})
+	defer reader.Close()
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.DataFromReader(http.StatusOK, -1, contentType, reader, nil)
 }
 
 func userHasAvatar(u *models.User) bool {

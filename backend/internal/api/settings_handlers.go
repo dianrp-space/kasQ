@@ -159,12 +159,14 @@ func (h *Handler) serveBrandingFile(c *gin.Context, kind string) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	url, err := h.svc.GetAssetViewURL(c.Request.Context(), *objectKey)
+	reader, contentType, err := h.svc.OpenAsset(c.Request.Context(), *objectKey)
 	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.Redirect(http.StatusFound, url)
+	defer reader.Close()
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.DataFromReader(http.StatusOK, -1, contentType, reader, nil)
 }
 
 func isImageContent(contentType, filename string) bool {

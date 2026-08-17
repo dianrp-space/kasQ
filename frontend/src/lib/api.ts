@@ -63,11 +63,9 @@ export const api = {
 			method: 'PUT',
 			body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
 		}),
-	getMyAvatar: async (): Promise<string | null> => {
-		const res = await fetch(`${API_URL}/api/me/avatar`, { credentials: 'include' });
-		if (!res.ok) return null;
-		const data = await res.json();
-		return data.url ?? null;
+	getMyAvatar: (cacheBust?: number) => {
+		const url = `${API_URL}/api/me/avatar`;
+		return cacheBust ? `${url}?v=${cacheBust}` : url;
 	},
 
 	getAppSettings: () =>

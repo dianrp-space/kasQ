@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { User } from '$lib/types';
-	import { getContext } from 'svelte';
+	import { getContext, onMount } from 'svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { Avatar, Button, Card, Heading, Input, Label } from 'flowbite-svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
@@ -21,6 +21,8 @@
 	let passwordError = $state('');
 	let passwordSuccess = $state('');
 
+	let blobPreviewUrl: string | null = null;
+
 	const refreshUser = getContext<() => Promise<void>>('refreshUser');
 
 	const initials = $derived(
@@ -32,7 +34,7 @@
 			.join('') || '?'
 	);
 
-	async function load() {
+	async function load(bustAvatar = false) {
 		loading = true;
 		error = '';
 		try {
@@ -40,13 +42,13 @@
 			name = user.name;
 			removeAvatar = false;
 			avatarFile = null;
-			if (avatarPreview) {
-				URL.revokeObjectURL(avatarPreview);
-				avatarPreview = null;
+			if (blobPreviewUrl) {
+				URL.revokeObjectURL(blobPreviewUrl);
+				blobPreviewUrl = null;
 			}
+			avatarPreview = null;
 			if (user.has_avatar) {
-				const url = await api.getMyAvatar();
-				if (url) avatarPreview = url;
+				avatarPreview = api.getMyAvatar(bustAvatar ? Date.now() : undefined);
 			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Gagal memuat profil';
@@ -58,12 +60,14 @@
 	function onAvatarChange(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
 		const file = input.files?.[0] ?? null;
-		if (avatarPreview && avatarPreview.startsWith('blob:')) {
-			URL.revokeObjectURL(avatarPreview);
+		if (blobPreviewUrl) {
+			URL.revokeObjectURL(blobPreviewUrl);
+			blobPreviewUrl = null;
 		}
 		avatarFile = file;
 		removeAvatar = false;
-		avatarPreview = file ? URL.createObjectURL(file) : null;
+		blobPreviewUrl = file ? URL.createObjectURL(file) : null;
+		avatarPreview = blobPreviewUrl;
 	}
 
 	async function save(e: Event) {
@@ -79,7 +83,7 @@
 			user = await api.updateMe(form);
 			toast.success('Profil disimpan');
 			await refreshUser?.();
-			await load();
+			await load(true);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Gagal simpan profil';
 		} finally {
@@ -88,8 +92,9 @@
 	}
 
 	function clearAvatar() {
-		if (avatarPreview && avatarPreview.startsWith('blob:')) {
-			URL.revokeObjectURL(avatarPreview);
+		if (blobPreviewUrl) {
+			URL.revokeObjectURL(blobPreviewUrl);
+			blobPreviewUrl = null;
 		}
 		avatarFile = null;
 		avatarPreview = null;
@@ -119,12 +124,10 @@
 		}
 	}
 
-	$effect(() => {
+	onMount(() => {
 		load();
 		return () => {
-			if (avatarPreview && avatarPreview.startsWith('blob:')) {
-				URL.revokeObjectURL(avatarPreview);
-			}
+			if (blobPreviewUrl) URL.revokeObjectURL(blobPreviewUrl);
 		};
 	});
 </script>
