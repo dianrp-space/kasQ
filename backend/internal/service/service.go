@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -96,6 +97,52 @@ func (s *Service) GetNotaURL(ctx context.Context, key string, download bool) (st
 		return s.storage.PresignedDownloadURL(ctx, key)
 	}
 	return s.storage.PresignedViewURL(ctx, key)
+}
+
+func notaObjectKeys(stored string) []string {
+	stored = strings.TrimSpace(stored)
+	if stored == "" {
+		return nil
+	}
+	keys := []string{stored}
+	if strings.HasPrefix(stored, storage.PrefixNota) {
+		if legacy := strings.TrimPrefix(stored, storage.PrefixNota); legacy != stored {
+			keys = append(keys, legacy)
+		}
+	} else {
+		keys = append(keys, storage.PrefixNota+stored)
+	}
+	return keys
+}
+
+func (s *Service) OpenNota(ctx context.Context, storedKey string) (io.ReadCloser, string, error) {
+	var lastErr error
+	for _, key := range notaObjectKeys(storedKey) {
+		reader, contentType, err := s.storage.GetObject(ctx, key)
+		if err == nil {
+			return reader, contentType, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, "", lastErr
+	}
+	return nil, "", fmt.Errorf("nota not found")
+}
+
+func NotaFilename(key string) string {
+	return notaFilename(key)
+}
+
+func notaFilename(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "nota.jpg"
+	}
+	if i := strings.LastIndex(key, "/"); i >= 0 && i+1 < len(key) {
+		return key[i+1:]
+	}
+	return key
 }
 
 func (s *Service) UpdateTransaction(ctx context.Context, teamID, txID uuid.UUID, input UpdateWebTxInput) (*models.Transaction, *models.Balance, error) {

@@ -2,8 +2,10 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -70,6 +72,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		{
 			public.GET("/report/:token", h.PublicReport)
 			public.GET("/nota/:token", h.PublicNota)
+			public.GET("/nota/:token/file", h.ServePublicNota)
 			public.GET("/branding/logo", h.ServeBrandingLogo)
 			public.GET("/branding/favicon", h.ServeBrandingFavicon)
 		}
@@ -103,6 +106,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			protected.POST("/teams/:id/report-token/reset", h.ResetReportToken)
 			protected.GET("/teams/:id/report-token", h.GetReportToken)
 			protected.GET("/teams/:id/nota-url", h.GetNotaURL)
+			protected.GET("/teams/:id/nota", h.ServeTeamNota)
 
 			admin := protected.Group("")
 			admin.Use(middleware.RequireAdmin())
@@ -690,13 +694,48 @@ func (h *Handler) GetNotaURL(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "key required"})
 		return
 	}
-	download := c.Query("download") == "true"
-	url, err := h.svc.GetNotaURL(c.Request.Context(), key, download)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if !storage.NotaKeyBelongsToTeam(key, teamID.String()) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"url": url})
+	download := c.Query("download") == "true"
+	u := "/api/teams/" + teamID.String() + "/nota?key=" + url.QueryEscape(key)
+	if download {
+		u += "&download=true"
+	}
+	c.JSON(http.StatusOK, gin.H{"url": u})
+}
+
+func (h *Handler) ServeTeamNota(c *gin.Context) {
+	teamID, err := parseTeamID(c)
+	if err != nil || !h.canAccessTeam(c, teamID) {
+		h.respondTeamForbidden(c)
+		return
+	}
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key required"})
+		return
+	}
+	if !storage.NotaKeyBelongsToTeam(key, teamID.String()) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	h.serveNotaObject(c, key, c.Query("download") == "true")
+}
+
+func (h *Handler) serveNotaObject(c *gin.Context, key string, download bool) {
+	reader, contentType, err := h.svc.OpenNota(c.Request.Context(), key)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "nota not found"})
+		return
+	}
+	defer reader.Close()
+	if download {
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, service.NotaFilename(key)))
+	}
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.DataFromReader(http.StatusOK, -1, contentType, reader, nil)
 }
 
 func (h *Handler) ListUsers(c *gin.Context) {
@@ -1200,10 +1239,28 @@ func (h *Handler) PublicNota(c *gin.Context) {
 		return
 	}
 	download := c.Query("download") == "true"
-	url, err := h.svc.GetNotaURL(c.Request.Context(), key, download)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	u := "/api/public/nota/" + token + "/file?key=" + url.QueryEscape(key)
+	if download {
+		u += "&download=true"
+	}
+	c.JSON(http.StatusOK, gin.H{"url": u})
+}
+
+func (h *Handler) ServePublicNota(c *gin.Context) {
+	token := c.Param("token")
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key required"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"url": url})
+	team, _, err := h.repo.GetReportByToken(c.Request.Context(), token)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if !storage.NotaKeyBelongsToTeam(key, team.ID.String()) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	h.serveNotaObject(c, key, c.Query("download") == "true")
 }
