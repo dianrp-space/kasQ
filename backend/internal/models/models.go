@@ -37,15 +37,15 @@ type Team struct {
 }
 
 type User struct {
-	ID                   uuid.UUID  `json:"id"`
-	TeamID               *uuid.UUID `json:"team_id,omitempty"`
-	Name                 string     `json:"name"`
-	Email                string     `json:"email"`
-	PasswordHash         string     `json:"-"`
-	Role                 UserRole   `json:"role"`
-	EmailVerified        bool       `json:"email_verified"`
-	AvatarFile           *string    `json:"-"`
-	CreatedAt            time.Time  `json:"created_at"`
+	ID            uuid.UUID  `json:"id"`
+	TeamID        *uuid.UUID `json:"team_id,omitempty"`
+	Name          string     `json:"name"`
+	Email         string     `json:"email"`
+	PasswordHash  string     `json:"-"`
+	Role          UserRole   `json:"role"`
+	EmailVerified bool       `json:"email_verified"`
+	AvatarFile    *string    `json:"-"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type Transaction struct {
@@ -58,6 +58,8 @@ type Transaction struct {
 	Deskripsi   string     `json:"deskripsi"`
 	Total       int64      `json:"total"`
 	NotaKey     *string    `json:"nota_key,omitempty"`
+	NotaKeys    []string   `json:"nota_keys,omitempty"`
+	notaRaw     *string    `json:"-"`
 	Keterangan  *string    `json:"keterangan,omitempty"`
 	Source      TxSource   `json:"source"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -65,15 +67,17 @@ type Transaction struct {
 }
 
 type Integration struct {
-	TeamID             uuid.UUID `json:"team_id"`
-	WAEnabled          bool      `json:"wa_enabled"`
-	WAStatus           string    `json:"wa_status"`
-	WAPhone            *string   `json:"wa_phone,omitempty"`
-	WAName             *string   `json:"wa_name,omitempty"`
-	TeleEnabled        bool      `json:"tele_enabled"`
-	TeleBotToken       *string   `json:"tele_bot_token,omitempty"`
-	TeleAllowedChatID  *int64    `json:"tele_allowed_chat_id,omitempty"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	TeamID            uuid.UUID `json:"team_id"`
+	WAEnabled         bool      `json:"wa_enabled"`
+	WAStatus          string    `json:"wa_status"`
+	WAPhone           *string   `json:"wa_phone,omitempty"`
+	WAName            *string   `json:"wa_name,omitempty"`
+	WAAllowedPhones   []string  `json:"wa_allowed_phones,omitempty"`
+	TeleEnabled       bool      `json:"tele_enabled"`
+	TeleUseSystemBot  bool      `json:"tele_use_system_bot"`
+	TeleBotToken      *string   `json:"tele_bot_token,omitempty"`
+	TeleAllowedChatID *int64    `json:"tele_allowed_chat_id,omitempty"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type ReportToken struct {
@@ -94,11 +98,11 @@ type Balance struct {
 }
 
 type AppSettings struct {
-	AppName      string    `json:"app_name"`
-	AppTagline   string    `json:"app_tagline"`
-	LogoFile     *string   `json:"-"`
-	FaviconFile  *string   `json:"-"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	AppName     string    `json:"app_name"`
+	AppTagline  string    `json:"app_tagline"`
+	LogoFile    *string   `json:"-"`
+	FaviconFile *string   `json:"-"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type CreateTransactionInput struct {

@@ -42,6 +42,7 @@ export interface Transaction {
 	deskripsi: string;
 	total: number;
 	nota_key?: string;
+	nota_keys?: string[];
 	keterangan?: string;
 	source: 'web' | 'wa' | 'tele';
 	created_at: string;
@@ -64,13 +65,19 @@ export interface Integration {
 	wa_name?: string;
 	wa_has_avatar?: boolean;
 	wa_picture_url?: string;
+	wa_allowed_phones?: string[];
 	tele_enabled: boolean;
+	tele_use_system_bot?: boolean;
 	tele_bot_token?: string;
 	tele_allowed_chat_id?: number;
 	tele_bot_name?: string;
 	tele_bot_username?: string;
 	tele_bot_has_avatar?: boolean;
 	has_tele_token: boolean;
+	system_tele_bot_available?: boolean;
+	system_tele_bot_name?: string;
+	system_tele_bot_username?: string;
+	system_tele_bot_has_avatar?: boolean;
 	report_token?: string;
 	report_url?: string;
 	team_slug?: string;

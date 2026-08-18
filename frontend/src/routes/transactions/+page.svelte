@@ -4,7 +4,7 @@
 	import NoTeamBanner from '$lib/components/NoTeamBanner.svelte';
 	import TxImportModal from '$lib/components/TxImportModal.svelte';
 	import { toast } from '$lib/toast.svelte';
-	import { getDayName, HARI_LIST, toInputDate } from '$lib/utils';
+	import { getDayName, HARI_LIST, MAX_NOTA_FILES, toInputDate } from '$lib/utils';
 	import { goto } from '$app/navigation';
 	import { Alert, Button, Card, Heading, Input, Label, Select, Textarea } from 'flowbite-svelte';
 
@@ -18,7 +18,8 @@
 	let deskripsi = $state('');
 	let total = $state('');
 	let keterangan = $state('');
-	let notaFile = $state<File | null>(null);
+	let notaFiles = $state<File[]>([]);
+	let notaPreviews = $state<string[]>([]);
 	let error = $state('');
 	let success = $state('');
 	let loading = $state(false);
@@ -28,6 +29,29 @@
 	function onDateChange() {
 		const d = new Date(tanggal + 'T00:00:00');
 		hari = getDayName(d);
+	}
+
+	function clearNotaFiles() {
+		for (const url of notaPreviews) URL.revokeObjectURL(url);
+		notaFiles = [];
+		notaPreviews = [];
+	}
+
+	function onNotaChange(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const picked = [...(input.files ?? [])];
+		input.value = '';
+		if (!picked.length) return;
+		const next = [...notaFiles, ...picked].slice(0, MAX_NOTA_FILES);
+		for (const url of notaPreviews) URL.revokeObjectURL(url);
+		notaFiles = next;
+		notaPreviews = next.map((f) => URL.createObjectURL(f));
+	}
+
+	function removeNotaAt(i: number) {
+		URL.revokeObjectURL(notaPreviews[i]);
+		notaFiles = notaFiles.filter((_, idx) => idx !== i);
+		notaPreviews = notaPreviews.filter((_, idx) => idx !== i);
 	}
 
 	async function load() {
@@ -59,7 +83,9 @@
 			form.append('deskripsi', deskripsi);
 			form.append('total', total);
 			if (keterangan) form.append('keterangan', keterangan);
-			if (notaFile) form.append('nota', notaFile);
+			for (const file of notaFiles) {
+				form.append('nota', file);
+			}
 
 			const result = await api.createTransaction(selectedTeam, form);
 			success = `Transaksi berhasil! Saldo terkini: Rp ${result.balance.current_balance.toLocaleString('id-ID')}`;
@@ -67,7 +93,7 @@
 			deskripsi = '';
 			total = '';
 			keterangan = '';
-			notaFile = null;
+			clearNotaFiles();
 		} catch (err) {
 			if (err instanceof ApiError && err.noTeam) {
 				error = err.message;
@@ -159,17 +185,33 @@
 		</div>
 
 		<div>
-			<Label for="nota">Nota (foto, opsional)</Label>
+			<Label for="nota">Nota (foto, opsional, maks. {MAX_NOTA_FILES})</Label>
 			<input
 				id="nota"
 				type="file"
 				accept="image/*"
+				multiple
 				disabled={needsTeam}
-				class="block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-900 focus:outline-none disabled:opacity-50"
-				onchange={(e) => {
-					notaFile = (e.target as HTMLInputElement).files?.[0] ?? null;
-				}}
+				class="block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-900 focus:outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+				onchange={onNotaChange}
 			/>
+			{#if notaFiles.length > 0}
+				<div class="mt-2 flex flex-wrap gap-2">
+					{#each notaPreviews as src, i}
+						<div class="relative">
+							<img src={src} alt={notaFiles[i].name} class="h-16 w-16 rounded-md object-cover" />
+							<button
+								type="button"
+								class="absolute -right-1 -top-1 rounded-full bg-slate-800 px-1 text-xs text-white"
+								onclick={() => removeNotaAt(i)}
+							>
+								×
+							</button>
+						</div>
+					{/each}
+				</div>
+				<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{notaFiles.length} foto dipilih</p>
+			{/if}
 		</div>
 
 		<div>
@@ -192,9 +234,10 @@
 <Card size="lg" shadow="sm" class="mt-4 max-w-2xl p-3 sm:p-4">
 	<Heading tag="h2" class="mb-2 text-base">Format WA/Telegram</Heading>
 	<pre class="overflow-x-auto rounded-lg bg-slate-100 p-3 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">out#Senin#100826#Beli air minum#12000#(Keterangan/opsional)
+out#100826#Beli air minum#12000
 in#Sabtu#010826#Refill kas Batam#2000000</pre>
 	<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-		Keterangan opsional. Untuk pengeluaran dengan nota, kirim foto dengan caption format di atas.
+		Hari boleh dikosongkan — terisi otomatis dari tanggal. Keterangan opsional. Untuk pengeluaran dengan nota, kirim 1–10 foto. Telegram: caption format transaksi di foto mana pun (boleh album). WhatsApp: kirim beberapa foto berurutan, caption di foto terakhir (atau salah satu foto).
 		Rekap Excel lama? Pakai <strong>Import Excel</strong> — kolom Hari, Tanggal, Jenis, Deskripsi, Total, Link Nota.
 	</p>
 </Card>

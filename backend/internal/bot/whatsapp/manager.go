@@ -22,7 +22,6 @@ import (
 	"github.com/kasq/backend/internal/repository"
 	"github.com/kasq/backend/internal/service"
 	"github.com/skip2/go-qrcode"
-	_ "modernc.org/sqlite"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	waCompanionReg "go.mau.fi/whatsmeow/proto/waCompanionReg"
@@ -31,6 +30,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	_ "modernc.org/sqlite"
 )
 
 const pairCodeLifetime = 60 * time.Second
@@ -57,10 +57,13 @@ type ConnectStatus struct {
 type Manager struct {
 	repo         *repository.Repository
 	svc          *service.Service
+	appURL       string
 	dataDir      string
 	sessions     map[uuid.UUID]*session
 	seenMessages sync.Map
+	albums       map[string]*waAlbum
 	mu           sync.RWMutex
+	albumMu      sync.Mutex
 }
 
 type session struct {
@@ -79,12 +82,14 @@ type session struct {
 	loginMode        string
 }
 
-func NewManager(repo *repository.Repository, svc *service.Service, dataDir string) *Manager {
+func NewManager(repo *repository.Repository, svc *service.Service, dataDir, appURL string) *Manager {
 	return &Manager{
 		repo:     repo,
 		svc:      svc,
+		appURL:   strings.TrimRight(strings.TrimSpace(appURL), "/"),
 		dataDir:  dataDir,
 		sessions: make(map[uuid.UUID]*session),
+		albums:   make(map[string]*waAlbum),
 	}
 }
 
@@ -641,19 +646,58 @@ func (m *Manager) shouldProcessMessage(teamID uuid.UUID, msg *events.Message) bo
 	return true
 }
 
+func messageSenderPhones(msg *events.Message, client *whatsmeow.Client) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	addDigits := func(digits string) {
+		digits = models.NormalizeWAPhoneDigits(digits)
+		if digits == "" {
+			return
+		}
+		if _, ok := seen[digits]; ok {
+			return
+		}
+		seen[digits] = struct{}{}
+		out = append(out, digits)
+	}
+	addJID := func(jid types.JID) {
+		if jid.IsEmpty() {
+			return
+		}
+		if jid.Server == types.DefaultUserServer || jid.Server == types.LegacyUserServer {
+			addDigits(jid.User)
+		}
+	}
+
+	info := msg.Info
+	addJID(info.Sender)
+	addJID(info.SenderAlt)
+	addJID(info.Chat)
+	addJID(info.RecipientAlt)
+
+	if client != nil && client.Store != nil && client.Store.LIDs != nil {
+		ctx := context.Background()
+		for _, jid := range []types.JID{info.Sender, info.Chat, info.SenderAlt} {
+			if jid.IsEmpty() || jid.Server != types.HiddenUserServer {
+				continue
+			}
+			pn, err := client.Store.LIDs.GetPNForLID(ctx, jid)
+			if err == nil {
+				addJID(pn)
+			}
+		}
+	}
+	return out
+}
+
 func (m *Manager) handleMessage(teamID uuid.UUID, msg *events.Message) {
 	if !m.shouldProcessMessage(teamID, msg) {
 		return
 	}
 
 	ctx := context.Background()
-	team, err := m.repo.GetTeam(ctx, teamID)
+	integ, err := m.repo.GetIntegration(ctx, teamID)
 	if err != nil {
-		return
-	}
-
-	text := extractText(msg.Message)
-	if text == "" && msg.Message.ImageMessage == nil {
 		return
 	}
 
@@ -664,11 +708,33 @@ func (m *Manager) handleMessage(teamID uuid.UUID, msg *events.Message) {
 		return
 	}
 
+	senders := messageSenderPhones(msg, s.client)
+	if !integ.AnySenderAllowed(senders) {
+		log.Printf("wa: ignored message from %v (chat=%s sender=%s alt=%s) team %s (not whitelisted)",
+			senders, msg.Info.Chat.String(), msg.Info.Sender.String(), msg.Info.SenderAlt.String(), teamID)
+		return
+	}
+
+	team, err := m.repo.GetTeam(ctx, teamID)
+	if err != nil {
+		return
+	}
+
+	text := extractText(msg.Message)
+	if text == "" && msg.Message.ImageMessage == nil {
+		return
+	}
+
 	reply := func(body string) {
 		jid := msg.Info.Chat
 		_, _ = s.client.SendMessage(ctx, jid, &waProto.Message{
 			Conversation: &body,
 		})
+	}
+
+	if bot.IsLinkCommand(strings.TrimSpace(text)) {
+		reply(m.formatLinkReply(ctx, teamID, team.Name))
+		return
 	}
 
 	if strings.EqualFold(strings.TrimSpace(text), "!saldo") {
@@ -681,26 +747,12 @@ func (m *Manager) handleMessage(teamID uuid.UUID, msg *events.Message) {
 		return
 	}
 
-	var notaKey *string
-	caption := text
 	if msg.Message.ImageMessage != nil {
-		if msg.Message.ImageMessage.Caption != nil {
-			caption = *msg.Message.ImageMessage.Caption
-		}
-		data, err := s.client.Download(ctx, msg.Message.GetImageMessage())
-		if err == nil {
-			mime := "image/jpeg"
-			if msg.Message.ImageMessage.Mimetype != nil {
-				mime = *msg.Message.ImageMessage.Mimetype
-			}
-			key, err := m.svc.UploadNota(ctx, teamID, "wa-nota.jpg", data, mime)
-			if err == nil {
-				notaKey = &key
-			}
-		}
+		m.enqueueWAImage(ctx, teamID, s, msg, team.Name, reply)
+		return
 	}
 
-	parsed, err := bot.ParseMessage(caption, models.SourceWA)
+	parsed, err := bot.ParseMessage(text, models.SourceWA)
 	if err != nil {
 		if err == bot.ErrSaldoCommand {
 			balance, err := m.repo.GetBalance(ctx, teamID, nil, nil)
@@ -711,17 +763,20 @@ func (m *Manager) handleMessage(teamID uuid.UUID, msg *events.Message) {
 			reply(bot.FormatSaldoReply(team.Name, balance.CurrentBalance))
 			return
 		}
+		if err == bot.ErrLinkCommand {
+			reply(m.formatLinkReply(ctx, teamID, team.Name))
+			return
+		}
 		reply(bot.FormatErrorReply(err))
 		return
 	}
 
-	tx, balance, err := m.svc.CreateTransactionFromBot(ctx, teamID, *parsed, notaKey)
+	tx, balance, err := m.svc.CreateTransactionFromBot(ctx, teamID, *parsed, nil)
 	if err != nil {
 		reply("❌ Gagal simpan: " + err.Error())
 		return
 	}
-	hasNota := notaKey != nil
-	reply(bot.FormatSuccessReply(tx, balance.CurrentBalance, team.Name, hasNota))
+	reply(bot.FormatSuccessReply(tx, balance.CurrentBalance, team.Name, 0))
 }
 
 func extractText(msg *waProto.Message) string {
@@ -735,4 +790,12 @@ func extractText(msg *waProto.Message) string {
 		return *msg.ImageMessage.Caption
 	}
 	return ""
+}
+
+func (m *Manager) formatLinkReply(ctx context.Context, teamID uuid.UUID, teamName string) string {
+	rt, err := m.repo.GetReportToken(ctx, teamID)
+	if err != nil || !rt.IsActive {
+		return "❌ Link laporan publik belum tersedia"
+	}
+	return bot.FormatLinkReply(teamName, bot.PublicReportURL(m.appURL, rt.Token))
 }

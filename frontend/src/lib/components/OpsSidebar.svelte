@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { ChartPieOutline, HeartOutline, LinkOutline, PenOutline, UserCircleSolid } from 'flowbite-svelte-icons';
 	import { opsNavLinks, isOpsNavActive } from '$lib/opsNav';
+	import { APP_VERSION } from '$lib/version';
 
 	const icons = {
 		'/dashboard': ChartPieOutline,
@@ -12,8 +13,8 @@
 	} as const;
 </script>
 
-<aside class="hidden w-56 shrink-0 border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 md:block">
-	<nav class="flex flex-col gap-1 p-4">
+<aside class="hidden h-full w-56 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 md:flex">
+	<nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-4">
 		<p class="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Menu</p>
 		{#each opsNavLinks as link}
 			{@const Icon = icons[link.href as keyof typeof icons]}
@@ -29,4 +30,5 @@
 			</a>
 		{/each}
 	</nav>
+	<p class="px-4 pb-4 pt-2 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">KasQ v{APP_VERSION}</p>
 </aside>

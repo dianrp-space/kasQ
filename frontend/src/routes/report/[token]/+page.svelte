@@ -10,7 +10,7 @@
 	import NotaPreviewModal from '$lib/components/NotaPreviewModal.svelte';
 	import BalanceCards from '$lib/components/BalanceCards.svelte';
 	import DashboardChart from '$lib/components/DashboardChart.svelte';
-	import { formatMonthLabel, getMonthRange, toInputMonth } from '$lib/utils';
+	import { formatMonthLabel, getMonthRange, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
 	import { Alert, Button, Card, Heading, Label, Select, Spinner } from 'flowbite-svelte';
 	import MonthPeriodFilter from '$lib/components/MonthPeriodFilter.svelte';
 	import { onMount } from 'svelte';
@@ -21,8 +21,8 @@
 	let filterJenis = $state('');
 	let filterMonth = $state(toInputMonth());
 	let notaPreviewOpen = $state(false);
-	let notaPreviewUrl = $state('');
-	let notaDownloadKey = $state('');
+	let notaPreviewSrcs = $state<string[]>([]);
+	let notaPreviewKeys = $state<string[]>([]);
 
 	const token = $derived($page.params.token ?? '');
 	const periodRange = $derived(getMonthRange(filterMonth));
@@ -52,11 +52,11 @@
 		load();
 	}
 
-	async function viewNota(key: string) {
-		const url = await api.getPublicNotaURL(token, key);
-		if (!url) return;
-		notaPreviewUrl = url;
-		notaDownloadKey = key;
+	async function viewNota(keys: string[]) {
+		if (!keys.length) return;
+		const urls = await Promise.all(keys.map((key) => api.getPublicNotaURL(token, key)));
+		notaPreviewSrcs = urls.filter((u): u is string => !!u);
+		notaPreviewKeys = keys;
 		notaPreviewOpen = true;
 	}
 
@@ -65,8 +65,26 @@
 		if (url) window.open(url, '_blank');
 	}
 
-	function downloadPreviewNota() {
-		if (notaDownloadKey) downloadNota(notaDownloadKey);
+	function downloadPreviewNota(index: number) {
+		const key = notaPreviewKeys[index];
+		if (key) downloadNota(key);
+	}
+
+	async function downloadAllPreviewNota() {
+		if (!notaPreviewKeys.length) return;
+		try {
+			const items: { url: string; filename: string }[] = [];
+			for (let i = 0; i < notaPreviewKeys.length; i++) {
+				const key = notaPreviewKeys[i];
+				const url = await api.getPublicNotaURL(token, key, true);
+				if (url) items.push({ url, filename: notaFilenameFromKey(key, i) });
+			}
+			if (!items.length) throw new Error('no urls');
+			const stamp = new Date().toISOString().slice(0, 10);
+			await downloadFilesAsZip(items, `nota-${stamp}.zip`);
+		} catch {
+			// silent on public report
+		}
 	}
 
 	$effect(() => {
@@ -140,4 +158,4 @@
 	</main>
 </div>
 
-<NotaPreviewModal bind:open={notaPreviewOpen} src={notaPreviewUrl} onDownload={downloadPreviewNota} />
+<NotaPreviewModal bind:open={notaPreviewOpen} srcs={notaPreviewSrcs} onDownload={downloadPreviewNota} onDownloadAll={downloadAllPreviewNota} />

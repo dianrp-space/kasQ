@@ -211,6 +211,11 @@ export const api = {
 			method: 'PUT',
 			body: JSON.stringify({ enabled })
 		}),
+	updateWAAllowedPhones: (teamId: string, phones: string[]) =>
+		request<{ ok: boolean; phones: string[] }>(`/api/teams/${teamId}/integrations/wa/allowed-phones`, {
+			method: 'PUT',
+			body: JSON.stringify({ phones })
+		}),
 	getWAQR: (teamId: string) =>
 		request<{
 			status: string;
@@ -232,7 +237,7 @@ export const api = {
 		),
 	updateTele: (
 		teamId: string,
-		data: { enabled: boolean; bot_token?: string; chat_id?: number | null }
+		data: { enabled: boolean; use_system_bot?: boolean; bot_token?: string; chat_id?: number | null }
 	) =>
 		request<{ ok: boolean }>(`/api/teams/${teamId}/integrations/tele`, {
 			method: 'PUT',

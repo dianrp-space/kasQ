@@ -9,7 +9,7 @@
 	import DashboardChart from '$lib/components/DashboardChart.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import { toast } from '$lib/toast.svelte';
-	import { formatMonthLabel, getMonthRange, toInputMonth } from '$lib/utils';
+	import { formatMonthLabel, getMonthRange, greetingWithName, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { Button, Card, Heading, Label, Select } from 'flowbite-svelte';
@@ -29,8 +29,8 @@
 	let filterJenis = $state('');
 	let filterMonth = $state(toInputMonth());
 	let notaPreviewOpen = $state(false);
-	let notaPreviewUrl = $state('');
-	let notaDownloadKey = $state('');
+	let notaPreviewSrcs = $state<string[]>([]);
+	let notaPreviewKeys = $state<string[]>([]);
 	let editOpen = $state(false);
 	let editingTx = $state<Transaction | null>(null);
 	let selectedIds = $state<string[]>([]);
@@ -41,6 +41,7 @@
 	const totalPages = $derived(Math.max(1, Math.ceil(txTotal / PAGE_SIZE)));
 	const rangeStart = $derived(txTotal === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1);
 	const rangeEnd = $derived(Math.min(currentPage * PAGE_SIZE, txTotal));
+	const pageTitle = $derived(user?.name ? greetingWithName(user.name) : 'Dashboard');
 
 	function buildParams(includeJenis = true) {
 		const params: Record<string, string> = {};
@@ -113,20 +114,58 @@
 		loadTeamData();
 	}
 
-	async function viewNota(key: string) {
-		const { url } = await api.getNotaURL(selectedTeam, key);
-		notaPreviewUrl = url;
-		notaDownloadKey = key;
+	async function viewNota(keys: string[]) {
+		if (!keys.length) return;
+		const urls: string[] = [];
+		const loadedKeys: string[] = [];
+		for (const key of keys) {
+			try {
+				const { url } = await api.getNotaURL(selectedTeam, key);
+				if (url) {
+					urls.push(url);
+					loadedKeys.push(key);
+				}
+			} catch {}
+		}
+		if (!urls.length) {
+			toast.error('Nota tidak bisa dibuka — cek akses baca MinIO (GetObject) dari jaringan dev');
+			return;
+		}
+		notaPreviewSrcs = urls;
+		notaPreviewKeys = loadedKeys;
 		notaPreviewOpen = true;
 	}
 
 	async function downloadNota(key: string) {
-		const { url } = await api.getNotaURL(selectedTeam, key, true);
-		window.open(url, '_blank');
+		try {
+			const { url } = await api.getNotaURL(selectedTeam, key, true);
+			window.open(url, '_blank');
+		} catch {
+			toast.error('Gagal unduh nota');
+		}
 	}
 
-	function downloadPreviewNota() {
-		if (notaDownloadKey) downloadNota(notaDownloadKey);
+	function downloadPreviewNota(index: number) {
+		const key = notaPreviewKeys[index];
+		if (key) downloadNota(key);
+	}
+
+	async function downloadAllPreviewNota() {
+		if (!notaPreviewKeys.length) return;
+		try {
+			toast.info('Menyiapkan ZIP…');
+			const items = await Promise.all(
+				notaPreviewKeys.map(async (key, i) => {
+					const { url } = await api.getNotaURL(selectedTeam, key, true);
+					return { url, filename: notaFilenameFromKey(key, i) };
+				})
+			);
+			const stamp = new Date().toISOString().slice(0, 10);
+			await downloadFilesAsZip(items, `nota-${stamp}.zip`);
+			toast.success(`ZIP ${items.length} nota siap diunduh`);
+		} catch {
+			toast.error('Gagal buat ZIP nota');
+		}
 	}
 
 	function editTx(tx: Transaction) {
@@ -184,9 +223,12 @@
 	});
 </script>
 
-<svelte:head><title>Dashboard — KasQ</title></svelte:head>
+<svelte:head><title>{pageTitle} — KasQ</title></svelte:head>
 
-<Heading tag="h1" class="mb-3 text-xl sm:mb-4 sm:text-2xl">Dashboard</Heading>
+<div class="mb-3 sm:mb-4">
+	<Heading tag="h1" class="text-xl sm:text-2xl">{pageTitle}</Heading>
+	<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Dashboard</p>
+</div>
 
 {#if needsTeam}
 	<div class="mb-6 max-w-2xl">
@@ -264,5 +306,5 @@
 	</Card>
 {/if}
 
-<NotaPreviewModal bind:open={notaPreviewOpen} src={notaPreviewUrl} onDownload={downloadPreviewNota} />
+<NotaPreviewModal bind:open={notaPreviewOpen} srcs={notaPreviewSrcs} onDownload={downloadPreviewNota} onDownloadAll={downloadAllPreviewNota} />
 <TxEditModal bind:open={editOpen} teamId={selectedTeam} tx={editingTx} onSaved={onTxSaved} />

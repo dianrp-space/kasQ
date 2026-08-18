@@ -4,11 +4,13 @@
 
 # KasQ — Kas Ku
 
-Aplikasi fullstack pencatatan pemasukan & pengeluaran kas tim operasional.
+Aplikasi fullstack pencatatan pemasukan & pengeluaran kas tim operasional. Bisa input laporan dengan 3 mode, via web, WhatsApp, dan Telegram.
 
 **Stack:** SvelteKit + Go (Gin) + PostgreSQL + MinIO + Whatsmeow + Telebot
 
 **Environment:** Development & deployment di **WSL/Linux** (Ubuntu/Debian).
+
+**Versi:** lihat [`VERSION`](VERSION) · [`CHANGELOG.md`](CHANGELOG.md)
 
 **Repository:** [github.com/dianrp-space/kasQ](https://github.com/dianrp-space/kasQ)
 
@@ -26,12 +28,11 @@ git clone git@github.com:dianrp-space/kasQ.git
 cd kasQ
 ```
 
-> Tips performa: clone ke filesystem Linux, mis. `~/projects/kasQ` — bukan `/mnt/e/...` jika bisa.
 
 ## Fitur
 
 - Multi-kas per tim dengan saldo terhitung otomatis
-- Input via **Web**, **WhatsApp**, atau **Telegram**
+- Input via **Web**, **WhatsApp**, atau **Telegram** (bot sistem KasQ atau bot sendiri)
 - Link laporan publik untuk admin finance (tanpa login)
 - Upload foto nota ke MinIO (view & download)
 - Role: admin (kelola tim/user) & ops (input transaksi)
@@ -145,6 +146,12 @@ API_URL=http://localhost:8084
 PORT=8084
 ```
 
+Bot Telegram sistem (opsional). Jika diisi, user bisa pilih **Bot KasQ** di halaman Integrasi tanpa membuat bot sendiri:
+
+```env
+TELEGRAM_BOT_TOKEN=123456:ABC-token-dari-BotFather
+```
+
 > **MinIO remote:** bisa pakai `MINIO_ENDPOINT=https://s3.example.com` — SSL otomatis terdeteksi.
 
 > **Port bentrok?** Ubah `PORT` di `backend/.env` — vite proxy otomatis mengikuti via `BACKEND_PORT`.
@@ -201,11 +208,21 @@ Flow:
 
 ```
 out#Senin#100826#Beli air minum isi ulang galon#12000
+out#100826#Beli air minum isi ulang galon#12000
 in#Sabtu#010826#Refill kas Batam#2000000
 ```
 
-- Pengeluaran dengan nota: kirim **foto** + caption format di atas
-- Cek saldo: `!saldo`
+- Hari opsional — kalau dikosongkan, terisi otomatis dari tanggal (`out#100826#...`).
+- Pengeluaran dengan nota: kirim **1–10 foto**. Telegram: caption di foto mana pun (album OK). WhatsApp: beberapa foto berurutan, caption di foto terakhir (atau salah satu).
+- Cek saldo: `/saldo` (Telegram) atau `!saldo` (WA)
+- Link laporan: `/link` atau `!link`
+
+### Bot Telegram
+
+Dua opsi di halaman **Integrasi**:
+
+1. **Bot KasQ** — bot permanen sistem (`TELEGRAM_BOT_TOKEN` di `backend/.env`). User buka bot, kirim `/start`, salin Chat ID ke form, lalu aktifkan. Hanya chat pribadi.
+2. **Bot sendiri** — token dari [@BotFather](https://t.me/BotFather), boleh grup atau private.
 
 ## Production — Deploy di aaPanel (Nginx + systemd)
 

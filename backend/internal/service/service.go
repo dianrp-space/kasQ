@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -33,7 +34,7 @@ func (s *Service) CreateTransactionFromWeb(ctx context.Context, teamID uuid.UUID
 		Jenis:      input.Jenis,
 		Deskripsi:  input.Deskripsi,
 		Total:      input.Total,
-		NotaKey:    input.NotaKey,
+		NotaKey:    models.JoinNotaKeys(input.NotaKeys),
 		Keterangan: input.Keterangan,
 		Source:     models.SourceWeb,
 		CreatedBy:  &userID,
@@ -46,14 +47,14 @@ func (s *Service) CreateTransactionFromWeb(ctx context.Context, teamID uuid.UUID
 	return tx, balance, err
 }
 
-func (s *Service) CreateTransactionFromBot(ctx context.Context, teamID uuid.UUID, parsed bot.ParsedMessage, notaKey *string) (*models.Transaction, *models.Balance, error) {
+func (s *Service) CreateTransactionFromBot(ctx context.Context, teamID uuid.UUID, parsed bot.ParsedMessage, notaKeys []string) (*models.Transaction, *models.Balance, error) {
 	txInput := models.CreateTransactionInput{
 		Hari:       parsed.Hari,
 		Tanggal:    parsed.Tanggal,
 		Jenis:      parsed.Jenis,
 		Deskripsi:  parsed.Deskripsi,
 		Total:      parsed.Total,
-		NotaKey:    notaKey,
+		NotaKey:    models.JoinNotaKeys(notaKeys),
 		Keterangan: parsed.Keterangan,
 		Source:     parsed.Source,
 	}
@@ -66,12 +67,16 @@ func (s *Service) CreateTransactionFromBot(ctx context.Context, teamID uuid.UUID
 }
 
 func (s *Service) UploadNota(ctx context.Context, teamID uuid.UUID, filename string, data []byte, contentType string) (string, error) {
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	prepared, err := prepareNotaUpload(filename, contentType, data)
+	if err != nil {
+		return "", err
 	}
-	ext := notaObjectExt(filename, contentType)
+	if prepared.contentType == "" {
+		prepared.contentType = "application/octet-stream"
+	}
+	ext := notaObjectExt(prepared.filename, prepared.contentType)
 	key := fmt.Sprintf("%s%s/%s/%s%s", storage.PrefixNota, teamID.String(), time.Now().Format("2006/01"), uuid.New().String(), ext)
-	return key, s.storage.Upload(ctx, key, data, contentType)
+	return key, s.storage.Upload(ctx, key, prepared.data, prepared.contentType)
 }
 
 func notaObjectExt(filename, contentType string) string {
@@ -92,7 +97,11 @@ func notaObjectExt(filename, contentType string) string {
 	}
 }
 
-func (s *Service) GetNotaURL(ctx context.Context, key string, download bool) (string, error) {
+func (s *Service) GetNotaURL(ctx context.Context, stored string, download bool) (string, error) {
+	key := strings.TrimSpace(stored)
+	if key == "" {
+		return "", fmt.Errorf("empty nota key")
+	}
 	if download {
 		return s.storage.PresignedDownloadURL(ctx, key)
 	}
@@ -123,6 +132,12 @@ func (s *Service) OpenNota(ctx context.Context, storedKey string) (io.ReadCloser
 			return reader, contentType, nil
 		}
 		lastErr = err
+		if storage.IsAccessDenied(err) {
+			log.Printf("nota: get %q: access denied", key)
+		}
+	}
+	if storage.IsAccessDenied(lastErr) {
+		return nil, "", fmt.Errorf("minio access denied")
 	}
 	if lastErr != nil {
 		return nil, "", lastErr
@@ -151,18 +166,14 @@ func (s *Service) UpdateTransaction(ctx context.Context, teamID, txID uuid.UUID,
 		return nil, nil, err
 	}
 
-	notaKey := existing.NotaKey
-	var oldNotaKey *string
+	notaKey := existing.StoredNota()
+	oldKeys := models.ParseNotaKeys(notaKey)
 
-	if input.RemoveNota && existing.NotaKey != nil {
-		oldNotaKey = existing.NotaKey
+	if input.RemoveNota {
 		notaKey = nil
 	}
-	if input.NotaReplace != nil {
-		if existing.NotaKey != nil {
-			oldNotaKey = existing.NotaKey
-		}
-		notaKey = input.NotaReplace
+	if len(input.NotaReplace) > 0 {
+		notaKey = models.JoinNotaKeys(input.NotaReplace)
 	}
 
 	tx, err := s.repo.UpdateTransaction(ctx, teamID, txID, models.UpdateTransactionInput{
@@ -177,8 +188,8 @@ func (s *Service) UpdateTransaction(ctx context.Context, teamID, txID uuid.UUID,
 	if err != nil {
 		return nil, nil, err
 	}
-	if oldNotaKey != nil && *oldNotaKey != "" {
-		_ = s.storage.Delete(ctx, *oldNotaKey)
+	if input.RemoveNota || len(input.NotaReplace) > 0 {
+		s.deleteNotaKeys(ctx, oldKeys)
 	}
 	balance, err := s.repo.GetBalance(ctx, teamID, nil, nil)
 	return tx, balance, err
@@ -192,9 +203,7 @@ func (s *Service) DeleteTransaction(ctx context.Context, teamID, txID uuid.UUID)
 	if err := s.repo.DeleteTransaction(ctx, teamID, txID); err != nil {
 		return nil, err
 	}
-	if tx.NotaKey != nil && *tx.NotaKey != "" {
-		_ = s.storage.Delete(ctx, *tx.NotaKey)
-	}
+	s.deleteNotaKeys(ctx, models.ParseNotaKeys(tx.StoredNota()))
 	return s.repo.GetBalance(ctx, teamID, nil, nil)
 }
 
@@ -222,9 +231,7 @@ func (s *Service) BatchDeleteTransactions(ctx context.Context, teamID uuid.UUID,
 			}
 			return nil, err
 		}
-		if tx.NotaKey != nil && *tx.NotaKey != "" {
-			_ = s.storage.Delete(ctx, *tx.NotaKey)
-		}
+		s.deleteNotaKeys(ctx, models.ParseNotaKeys(tx.StoredNota()))
 		deleted++
 	}
 	if deleted == 0 {
@@ -243,7 +250,7 @@ type CreateWebTxInput struct {
 	Jenis      models.TxJenis
 	Deskripsi  string
 	Total      int64
-	NotaKey    *string
+	NotaKeys   []string
 	Keterangan *string
 }
 
@@ -254,8 +261,16 @@ type UpdateWebTxInput struct {
 	Deskripsi   string
 	Total       int64
 	Keterangan  *string
-	NotaReplace *string
+	NotaReplace []string
 	RemoveNota  bool
+}
+
+func (s *Service) deleteNotaKeys(ctx context.Context, keys []string) {
+	for _, key := range keys {
+		if key != "" {
+			_ = s.storage.Delete(ctx, key)
+		}
+	}
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)

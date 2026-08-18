@@ -39,3 +39,11 @@ func TestLoadMinIOPublicEndpointDefaultsToInternal(t *testing.T) {
 		t.Fatal("expected SSL true from https endpoint")
 	}
 }
+
+func TestLoadTelegramBotToken(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", " 123:abc ")
+	cfg := Load()
+	if cfg.TelegramBotToken != "123:abc" {
+		t.Fatalf("TelegramBotToken = %q", cfg.TelegramBotToken)
+	}
+}

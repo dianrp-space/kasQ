@@ -45,3 +45,9 @@ body {
 .user-menu-dropdown ul {
 	@apply m-0 list-none p-0;
 }
+
+.dashboard-chart .apexcharts-canvas,
+.dashboard-chart .apexcharts-svg,
+.dashboard-chart .apexcharts-inner {
+	background: transparent !important;
+}

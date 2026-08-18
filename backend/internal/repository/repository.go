@@ -16,6 +16,9 @@ import (
 
 var ErrNotFound = errors.New("not found")
 var ErrTokenTaken = errors.New("report token already taken")
+var ErrChatIDTaken = errors.New("telegram chat id already used by another team")
+
+const integrationColumns = `team_id, wa_enabled, wa_status, wa_phone, wa_name, wa_allowed_phones, tele_enabled, tele_use_system_bot, tele_bot_token, tele_allowed_chat_id, updated_at`
 
 type Repository struct {
 	pool *pgxpool.Pool
@@ -178,16 +181,20 @@ func (r *Repository) CreateTransaction(ctx context.Context, teamID uuid.UUID, in
 		input.Total, input.NotaKey, input.Keterangan, input.Source,
 	).Scan(&tx.ID, &tx.TeamID, &tx.CreatedBy, &tx.Hari, &tx.Tanggal, &tx.Jenis,
 		&tx.Deskripsi, &tx.Total, &tx.NotaKey, &tx.Keterangan, &tx.Source, &tx.CreatedAt)
-	return &tx, err
+	if err != nil {
+		return nil, err
+	}
+	tx.HydrateNota()
+	return &tx, nil
 }
 
 type TxFilter struct {
-	TeamID    uuid.UUID
-	Jenis     *models.TxJenis
-	DateFrom  *time.Time
-	DateTo    *time.Time
-	Limit     int
-	Offset    int
+	TeamID   uuid.UUID
+	Jenis    *models.TxJenis
+	DateFrom *time.Time
+	DateTo   *time.Time
+	Limit    int
+	Offset   int
 }
 
 func txFilterWhere(f TxFilter) (string, []any, int) {
@@ -247,6 +254,7 @@ func (r *Repository) ListTransactions(ctx context.Context, f TxFilter) ([]models
 			&tx.Source, &tx.CreatedAt, &tx.CreatorName); err != nil {
 			return nil, err
 		}
+		tx.HydrateNota()
 		txs = append(txs, tx)
 	}
 	return txs, rows.Err()
@@ -267,7 +275,11 @@ func (r *Repository) GetTransaction(ctx context.Context, teamID, txID uuid.UUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return &tx, err
+	if err != nil {
+		return nil, err
+	}
+	tx.HydrateNota()
+	return &tx, nil
 }
 
 func (r *Repository) UpdateTransaction(ctx context.Context, teamID, txID uuid.UUID, input models.UpdateTransactionInput) (*models.Transaction, error) {
@@ -285,7 +297,11 @@ func (r *Repository) UpdateTransaction(ctx context.Context, teamID, txID uuid.UU
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return &tx, err
+	if err != nil {
+		return nil, err
+	}
+	tx.HydrateNota()
+	return &tx, nil
 }
 
 func (r *Repository) DeleteTransaction(ctx context.Context, teamID, txID uuid.UUID) error {
@@ -392,15 +408,20 @@ func (r *Repository) GetBalance(ctx context.Context, teamID uuid.UUID, dateFrom,
 }
 
 func (r *Repository) GetIntegration(ctx context.Context, teamID uuid.UUID) (*models.Integration, error) {
-	var i models.Integration
-	err := r.pool.QueryRow(ctx, `
-		SELECT team_id, wa_enabled, wa_status, wa_phone, wa_name, tele_enabled, tele_bot_token, tele_allowed_chat_id, updated_at
-		FROM integrations WHERE team_id = $1`, teamID,
-	).Scan(&i.TeamID, &i.WAEnabled, &i.WAStatus, &i.WAPhone, &i.WAName, &i.TeleEnabled, &i.TeleBotToken, &i.TeleAllowedChatID, &i.UpdatedAt)
+	row := r.pool.QueryRow(ctx, `SELECT `+integrationColumns+` FROM integrations WHERE team_id = $1`, teamID)
+	i, err := scanIntegration(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return &i, err
+	return i, err
+}
+
+func (r *Repository) UpdateWAAllowedPhones(ctx context.Context, teamID uuid.UUID, phones []string) error {
+	stored := models.JoinWAAllowedPhones(phones)
+	_, err := r.pool.Exec(ctx, `
+		UPDATE integrations SET wa_allowed_phones=$2, updated_at=NOW()
+		WHERE team_id=$1`, teamID, stored)
+	return err
 }
 
 func (r *Repository) UpdateWAIntegration(ctx context.Context, teamID uuid.UUID, enabled bool, status string, sessionData *string, phone *string, name *string) error {
@@ -410,17 +431,21 @@ func (r *Repository) UpdateWAIntegration(ctx context.Context, teamID uuid.UUID, 
 	return err
 }
 
-func (r *Repository) UpdateTeleIntegration(ctx context.Context, teamID uuid.UUID, enabled bool, token *string, chatID *int64) error {
+func (r *Repository) UpdateTeleIntegration(ctx context.Context, teamID uuid.UUID, enabled, useSystem bool, token *string, chatID *int64) error {
+	if useSystem {
+		token = nil
+	}
 	_, err := r.pool.Exec(ctx, `
-		UPDATE integrations SET tele_enabled=$2, tele_bot_token=$3, tele_allowed_chat_id=$4, updated_at=NOW()
-		WHERE team_id=$1`, teamID, enabled, token, chatID)
+		UPDATE integrations SET tele_enabled=$2, tele_use_system_bot=$3, tele_bot_token=$4, tele_allowed_chat_id=$5, updated_at=NOW()
+		WHERE team_id=$1`, teamID, enabled, useSystem, token, chatID)
+	if isUniqueViolation(err) {
+		return ErrChatIDTaken
+	}
 	return err
 }
 
 func (r *Repository) ListEnabledWAIntegrations(ctx context.Context) ([]models.Integration, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT team_id, wa_enabled, wa_status, wa_phone, wa_name, tele_enabled, tele_bot_token, tele_allowed_chat_id, updated_at
-		FROM integrations WHERE wa_enabled = true`)
+	rows, err := r.pool.Query(ctx, `SELECT `+integrationColumns+` FROM integrations WHERE wa_enabled = true`)
 	if err != nil {
 		return nil, err
 	}
@@ -430,13 +455,27 @@ func (r *Repository) ListEnabledWAIntegrations(ctx context.Context) ([]models.In
 
 func (r *Repository) ListEnabledTeleIntegrations(ctx context.Context) ([]models.Integration, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT team_id, wa_enabled, wa_status, wa_phone, wa_name, tele_enabled, tele_bot_token, tele_allowed_chat_id, updated_at
-		FROM integrations WHERE tele_enabled = true AND tele_bot_token IS NOT NULL`)
+		SELECT `+integrationColumns+`
+		FROM integrations
+		WHERE tele_enabled = true AND tele_use_system_bot = false AND tele_bot_token IS NOT NULL`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	return scanIntegrations(rows)
+}
+
+func (r *Repository) GetEnabledSystemTeleByChatID(ctx context.Context, chatID int64) (*models.Integration, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT `+integrationColumns+`
+		FROM integrations
+		WHERE tele_enabled = true AND tele_use_system_bot = true AND tele_allowed_chat_id = $1
+		LIMIT 1`, chatID)
+	i, err := scanIntegration(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return i, err
 }
 
 func (r *Repository) GetWASessionData(ctx context.Context, teamID uuid.UUID) (*string, error) {
@@ -537,14 +576,25 @@ func scanUser(row scannable) (*models.User, error) {
 	return &u, err
 }
 
+func scanIntegration(row scannable) (*models.Integration, error) {
+	var i models.Integration
+	var waAllowedRaw *string
+	err := row.Scan(&i.TeamID, &i.WAEnabled, &i.WAStatus, &i.WAPhone, &i.WAName, &waAllowedRaw, &i.TeleEnabled, &i.TeleUseSystemBot, &i.TeleBotToken, &i.TeleAllowedChatID, &i.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	i.HydrateWAAllowed(waAllowedRaw)
+	return &i, nil
+}
+
 func scanIntegrations(rows pgx.Rows) ([]models.Integration, error) {
 	var list []models.Integration
 	for rows.Next() {
-		var i models.Integration
-		if err := rows.Scan(&i.TeamID, &i.WAEnabled, &i.WAStatus, &i.WAPhone, &i.WAName, &i.TeleEnabled, &i.TeleBotToken, &i.TeleAllowedChatID, &i.UpdatedAt); err != nil {
+		i, err := scanIntegration(rows)
+		if err != nil {
 			return nil, err
 		}
-		list = append(list, i)
+		list = append(list, *i)
 	}
 	return list, rows.Err()
 }

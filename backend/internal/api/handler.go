@@ -4,8 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"mime/multipart"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -16,9 +17,9 @@ import (
 	"github.com/kasq/backend/internal/bot/whatsapp"
 	"github.com/kasq/backend/internal/middleware"
 	"github.com/kasq/backend/internal/models"
-	"github.com/kasq/backend/internal/storage"
 	"github.com/kasq/backend/internal/repository"
 	"github.com/kasq/backend/internal/service"
+	"github.com/kasq/backend/internal/storage"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -47,6 +48,9 @@ type TeleStarter interface {
 	StopTeam(teamID uuid.UUID)
 	GetBotProfile(teamID uuid.UUID) telegram.BotProfile
 	OpenBotAvatar(teamID uuid.UUID) (io.ReadCloser, string, error)
+	SystemBotAvailable() bool
+	SystemBotProfile() telegram.BotProfile
+	IsSystemToken(token string) bool
 }
 
 func NewHandler(repo *repository.Repository, svc *service.Service, auth *service.AuthService, jwtSecret, appURL string, wa WAStarter, tele TeleStarter) *Handler {
@@ -96,6 +100,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			protected.POST("/teams/:id/transactions/batch-delete", h.BatchDeleteTransactions)
 			protected.GET("/teams/:id/integrations", h.GetIntegration)
 			protected.PUT("/teams/:id/integrations/wa", h.UpdateWA)
+			protected.PUT("/teams/:id/integrations/wa/allowed-phones", h.UpdateWAAllowedPhones)
 			protected.POST("/teams/:id/integrations/wa/qr/start", h.StartWAQRLogin)
 			protected.POST("/teams/:id/integrations/wa/pair", h.StartWAPairLogin)
 			protected.GET("/teams/:id/integrations/wa/qr", h.GetWAQR)
@@ -244,8 +249,8 @@ func (h *Handler) respondTeamForbidden(c *gin.Context) {
 		user, err := h.getCurrentUser(c)
 		if err == nil && user.TeamID == nil {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error":    "Akun belum ditugaskan ke tim/kas. Minta admin menetapkan tim/kas kamu.",
-				"no_team":  true,
+				"error":   "Akun belum ditugaskan ke tim/kas. Minta admin menetapkan tim/kas kamu.",
+				"no_team": true,
 			})
 			return
 		}
@@ -438,7 +443,6 @@ func (h *Handler) CreateTransaction(c *gin.Context) {
 		return
 	}
 
-	var notaKey *string
 	contentType := c.GetHeader("Content-Type")
 	if len(contentType) >= 19 && contentType[:19] == "multipart/form-data" {
 		hari := c.PostForm("hari")
@@ -459,20 +463,10 @@ func (h *Handler) CreateTransaction(c *gin.Context) {
 			return
 		}
 
-		file, header, err := c.Request.FormFile("nota")
-		if err == nil {
-			defer file.Close()
-			data, err := io.ReadAll(file)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca file"})
-				return
-			}
-			key, err := h.svc.UploadNota(c.Request.Context(), teamID, header.Filename, data, header.Header.Get("Content-Type"))
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			notaKey = &key
+		notaKeys, upErr := h.uploadNotaFiles(c, teamID)
+		if upErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": upErr.Error()})
+			return
 		}
 
 		var ket *string
@@ -481,7 +475,7 @@ func (h *Handler) CreateTransaction(c *gin.Context) {
 		}
 		userID := middleware.GetUserID(c)
 		tx, balance, err := h.svc.CreateTransactionFromWeb(c.Request.Context(), teamID, userID, service.CreateWebTxInput{
-			Hari: hari, Tanggal: tanggal, Jenis: jenis, Deskripsi: deskripsi, Total: total, NotaKey: notaKey, Keterangan: ket,
+			Hari: hari, Tanggal: tanggal, Jenis: jenis, Deskripsi: deskripsi, Total: total, NotaKeys: notaKeys, Keterangan: ket,
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -492,12 +486,12 @@ func (h *Handler) CreateTransaction(c *gin.Context) {
 	}
 
 	var req struct {
-		Hari       string        `json:"hari" binding:"required"`
-		Tanggal    string        `json:"tanggal" binding:"required"`
+		Hari       string         `json:"hari" binding:"required"`
+		Tanggal    string         `json:"tanggal" binding:"required"`
 		Jenis      models.TxJenis `json:"jenis" binding:"required"`
-		Deskripsi  string        `json:"deskripsi" binding:"required"`
-		Total      int64         `json:"total" binding:"required"`
-		Keterangan *string       `json:"keterangan"`
+		Deskripsi  string         `json:"deskripsi" binding:"required"`
+		Total      int64          `json:"total" binding:"required"`
+		Keterangan *string        `json:"keterangan"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -552,21 +546,14 @@ func (h *Handler) UpdateTransaction(c *gin.Context) {
 			return
 		}
 
-		var notaReplace *string
-		file, header, err := c.Request.FormFile("nota")
-		if err == nil {
-			defer file.Close()
-			data, err := io.ReadAll(file)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca file"})
-				return
-			}
-			key, err := h.svc.UploadNota(c.Request.Context(), teamID, header.Filename, data, header.Header.Get("Content-Type"))
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			notaReplace = &key
+		var notaReplace []string
+		files, err := h.uploadNotaFiles(c, teamID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if len(files) > 0 {
+			notaReplace = files
 			removeNota = false
 		}
 
@@ -699,9 +686,11 @@ func (h *Handler) GetNotaURL(c *gin.Context) {
 		return
 	}
 	download := c.Query("download") == "true"
-	u := "/api/teams/" + teamID.String() + "/nota?key=" + url.QueryEscape(key)
-	if download {
-		u += "&download=true"
+	u, err := h.svc.GetNotaURL(c.Request.Context(), key, download)
+	if err != nil {
+		log.Printf("nota: url team=%s key=%q: %v", teamID, key, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "nota not found"})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{"url": u})
 }
@@ -725,8 +714,13 @@ func (h *Handler) ServeTeamNota(c *gin.Context) {
 }
 
 func (h *Handler) serveNotaObject(c *gin.Context, key string, download bool) {
+	if u, err := h.svc.GetNotaURL(c.Request.Context(), key, download); err == nil {
+		c.Redirect(http.StatusTemporaryRedirect, u)
+		return
+	}
 	reader, contentType, err := h.svc.OpenNota(c.Request.Context(), key)
 	if err != nil {
+		log.Printf("nota: serve key=%q: %v", key, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "nota not found"})
 		return
 	}
@@ -863,20 +857,23 @@ func (h *Handler) GetIntegration(c *gin.Context) {
 	}
 
 	resp := gin.H{
-		"team_id":              integ.TeamID,
-		"wa_enabled":           integ.WAEnabled,
-		"wa_status":            waStatus,
-		"wa_phone":             integ.WAPhone,
-		"wa_name":              integ.WAName,
-		"tele_enabled":         integ.TeleEnabled,
-		"tele_allowed_chat_id": integ.TeleAllowedChatID,
-		"has_tele_token":       integ.TeleBotToken != nil && *integ.TeleBotToken != "",
+		"team_id":                   integ.TeamID,
+		"wa_enabled":                integ.WAEnabled,
+		"wa_status":                 waStatus,
+		"wa_phone":                  integ.WAPhone,
+		"wa_name":                   integ.WAName,
+		"wa_allowed_phones":         integ.WAAllowedPhones,
+		"tele_enabled":              integ.TeleEnabled,
+		"tele_use_system_bot":       integ.TeleUseSystemBot,
+		"tele_allowed_chat_id":      integ.TeleAllowedChatID,
+		"has_tele_token":            !integ.TeleUseSystemBot && integ.TeleBotToken != nil && *integ.TeleBotToken != "",
+		"system_tele_bot_available": false,
 	}
 	if team != nil {
 		resp["team_slug"] = team.Slug
 		resp["team_name"] = team.Name
 	}
-	if integ.TeleBotToken != nil {
+	if integ.TeleBotToken != nil && !integ.TeleUseSystemBot {
 		resp["tele_bot_token"] = *integ.TeleBotToken
 	}
 	if rt != nil {
@@ -891,6 +888,20 @@ func (h *Handler) GetIntegration(c *gin.Context) {
 		if pictureURL != "" {
 			resp["wa_picture_url"] = pictureURL
 			resp["wa_has_avatar"] = true
+		}
+	}
+	if h.teleManager != nil {
+		resp["system_tele_bot_available"] = h.teleManager.SystemBotAvailable()
+		if sys := h.teleManager.SystemBotProfile(); sys.Username != "" || sys.Name != "" {
+			if sys.Name != "" {
+				resp["system_tele_bot_name"] = sys.Name
+			}
+			if sys.Username != "" {
+				resp["system_tele_bot_username"] = sys.Username
+			}
+			if sys.HasAvatar {
+				resp["system_tele_bot_has_avatar"] = true
+			}
 		}
 	}
 	if integ.TeleEnabled && h.teleManager != nil {
@@ -944,6 +955,31 @@ func (h *Handler) UpdateWA(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (h *Handler) UpdateWAAllowedPhones(c *gin.Context) {
+	teamID, err := parseTeamID(c)
+	if err != nil || !h.canAccessTeam(c, teamID) {
+		h.respondTeamForbidden(c)
+		return
+	}
+	var req struct {
+		Phones []string `json:"phones"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	phones := models.JoinWAAllowedPhones(req.Phones)
+	var list []string
+	if phones != nil {
+		list = models.ParseWAAllowedPhones(phones)
+	}
+	if err := h.repo.UpdateWAAllowedPhones(c.Request.Context(), teamID, list); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "phones": list})
+}
+
 func (h *Handler) StartWAQRLogin(c *gin.Context) {
 	teamID, err := parseTeamID(c)
 	if err != nil || !h.canAccessTeam(c, teamID) {
@@ -984,9 +1020,9 @@ func (h *Handler) StartWAPairLogin(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"pair_code":         code,
-		"expires_seconds":   60,
-		"status":            "pair_code",
+		"pair_code":       code,
+		"expires_seconds": 60,
+		"status":          "pair_code",
 	})
 }
 
@@ -1025,9 +1061,10 @@ func (h *Handler) UpdateTele(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Enabled   bool    `json:"enabled"`
-		BotToken  *string `json:"bot_token"`
-		ChatID    *int64  `json:"chat_id"`
+		Enabled      bool    `json:"enabled"`
+		UseSystemBot *bool   `json:"use_system_bot"`
+		BotToken     *string `json:"bot_token"`
+		ChatID       *int64  `json:"chat_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1040,35 +1077,77 @@ func (h *Handler) UpdateTele(c *gin.Context) {
 		return
 	}
 
+	useSystem := integ.TeleUseSystemBot
+	if req.UseSystemBot != nil {
+		useSystem = *req.UseSystemBot
+	}
+
 	token := req.BotToken
 	if token == nil || strings.TrimSpace(*token) == "" {
 		token = integ.TeleBotToken
+	}
+	if token != nil {
+		trimmed := strings.TrimSpace(*token)
+		token = &trimmed
 	}
 	chatID := req.ChatID
 	if chatID == nil {
 		chatID = integ.TeleAllowedChatID
 	}
+	if chatID != nil && *chatID == 0 {
+		chatID = nil
+	}
 
 	if req.Enabled {
-		if token == nil || strings.TrimSpace(*token) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "bot_token required"})
-			return
-		}
-		if err := h.repo.UpdateTeleIntegration(c.Request.Context(), teamID, true, token, chatID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if h.teleManager != nil {
-			if err := h.teleManager.StartTeam(teamID, *token); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal start bot: " + err.Error()})
+		if useSystem {
+			if h.teleManager == nil || !h.teleManager.SystemBotAvailable() {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Bot KasQ belum dikonfigurasi. Hubungi admin atau gunakan bot sendiri."})
 				return
+			}
+			if chatID == nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Chat ID wajib untuk Bot KasQ. Kirim /start ke bot untuk mendapat Chat ID."})
+				return
+			}
+			if h.teleManager != nil {
+				h.teleManager.StopTeam(teamID)
+			}
+			if err := h.repo.UpdateTeleIntegration(c.Request.Context(), teamID, true, true, nil, chatID); err != nil {
+				if errors.Is(err, repository.ErrChatIDTaken) {
+					c.JSON(http.StatusConflict, gin.H{"error": "Chat ID ini sudah dipakai tim/kas lain pada Bot KasQ"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		} else {
+			if token == nil || *token == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "bot_token required"})
+				return
+			}
+			if h.teleManager != nil && h.teleManager.IsSystemToken(*token) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Token bot sistem tidak bisa dipakai di opsi bot sendiri. Pilih Bot KasQ."})
+				return
+			}
+			if err := h.repo.UpdateTeleIntegration(c.Request.Context(), teamID, true, false, token, chatID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if h.teleManager != nil {
+				if err := h.teleManager.StartTeam(teamID, *token); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal start bot: " + err.Error()})
+					return
+				}
 			}
 		}
 	} else {
 		if h.teleManager != nil {
 			h.teleManager.StopTeam(teamID)
 		}
-		if err := h.repo.UpdateTeleIntegration(c.Request.Context(), teamID, false, token, chatID); err != nil {
+		saveToken := token
+		if useSystem {
+			saveToken = nil
+		}
+		if err := h.repo.UpdateTeleIntegration(c.Request.Context(), teamID, false, useSystem, saveToken, chatID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -1239,9 +1318,11 @@ func (h *Handler) PublicNota(c *gin.Context) {
 		return
 	}
 	download := c.Query("download") == "true"
-	u := "/api/public/nota/" + token + "/file?key=" + url.QueryEscape(key)
-	if download {
-		u += "&download=true"
+	u, err := h.svc.GetNotaURL(c.Request.Context(), key, download)
+	if err != nil {
+		log.Printf("nota: public url token=%s key=%q: %v", token, key, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "nota not found"})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{"url": u})
 }
@@ -1263,4 +1344,52 @@ func (h *Handler) ServePublicNota(c *gin.Context) {
 		return
 	}
 	h.serveNotaObject(c, key, c.Query("download") == "true")
+}
+
+const maxNotaBytes = 10 << 20
+
+func (h *Handler) uploadNotaFiles(c *gin.Context, teamID uuid.UUID) ([]string, error) {
+	headers := notaFileHeaders(c)
+	if len(headers) == 0 {
+		return nil, nil
+	}
+	if len(headers) > models.MaxNotaFiles {
+		return nil, fmt.Errorf("maksimal %d foto nota", models.MaxNotaFiles)
+	}
+	keys := make([]string, 0, len(headers))
+	for _, header := range headers {
+		file, err := header.Open()
+		if err != nil {
+			return nil, fmt.Errorf("gagal buka file nota")
+		}
+		data, err := io.ReadAll(io.LimitReader(file, maxNotaBytes+1))
+		file.Close()
+		if err != nil {
+			return nil, fmt.Errorf("gagal baca file nota")
+		}
+		if len(data) == 0 {
+			continue
+		}
+		if len(data) > maxNotaBytes {
+			return nil, fmt.Errorf("file nota terlalu besar (max 10MB)")
+		}
+		key, err := h.svc.UploadNota(c.Request.Context(), teamID, header.Filename, data, header.Header.Get("Content-Type"))
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
+}
+
+func notaFileHeaders(c *gin.Context) []*multipart.FileHeader {
+	if form, err := c.MultipartForm(); err == nil && form != nil {
+		if files := form.File["nota"]; len(files) > 0 {
+			return files
+		}
+	}
+	if fh, err := c.FormFile("nota"); err == nil {
+		return []*multipart.FileHeader{fh}
+	}
+	return nil
 }

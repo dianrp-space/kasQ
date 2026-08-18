@@ -7,7 +7,7 @@
 	import { formatRupiah } from '$lib/utils';
 
 	let { balance, transactions }: { balance: Balance; transactions: Transaction[] } = $props();
-	let isDark = $state(false);
+	let isDark = $state(browser && document.documentElement.classList.contains('dark'));
 
 	$effect(() => {
 		if (!browser) return;
@@ -24,7 +24,8 @@
 	const chartTheme = $derived({
 		mode: (isDark ? 'dark' : 'light') as 'dark' | 'light',
 		labelColor: isDark ? '#94a3b8' : '#64748b',
-		gridColor: isDark ? '#334155' : '#e2e8f0'
+		gridColor: isDark ? '#334155' : '#e2e8f0',
+		tooltipTheme: (isDark ? 'dark' : 'light') as 'dark' | 'light'
 	});
 
 	const dailySeries = $derived.by(() => {
@@ -46,18 +47,27 @@
 
 	const donutOptions = $derived<ApexOptions>({
 		theme: { mode: chartTheme.mode },
-		chart: { type: 'donut', height: 220, fontFamily: 'inherit', toolbar: { show: false }, foreColor: chartTheme.labelColor },
+		chart: {
+			type: 'donut',
+			height: 220,
+			fontFamily: 'inherit',
+			background: 'transparent',
+			toolbar: { show: false },
+			foreColor: chartTheme.labelColor
+		},
 		series: [balance.total_in, balance.total_out],
 		labels: ['Pemasukan', 'Pengeluaran'],
 		colors: ['#059669', '#dc2626'],
 		legend: { position: 'bottom', offsetY: 0, labels: { colors: chartTheme.labelColor } },
 		dataLabels: { enabled: false },
+		stroke: { colors: ['transparent'] },
 		plotOptions: {
 			pie: {
-				donut: { size: '65%' }
+				donut: { size: '65%', background: 'transparent' }
 			}
 		},
 		tooltip: {
+			theme: chartTheme.tooltipTheme,
 			y: {
 				formatter: (val: number) => formatRupiah(val)
 			}
@@ -66,7 +76,15 @@
 
 	const barOptions = $derived<ApexOptions>({
 		theme: { mode: chartTheme.mode },
-		chart: { type: 'bar', height: 220, fontFamily: 'inherit', toolbar: { show: false }, stacked: false, foreColor: chartTheme.labelColor },
+		chart: {
+			type: 'bar',
+			height: 220,
+			fontFamily: 'inherit',
+			background: 'transparent',
+			toolbar: { show: false },
+			stacked: false,
+			foreColor: chartTheme.labelColor
+		},
 		series: [
 			{ name: 'Pemasukan', data: dailySeries.in },
 			{ name: 'Pengeluaran', data: dailySeries.out }
@@ -81,6 +99,7 @@
 		plotOptions: { bar: { borderRadius: 4, columnWidth: '55%' } },
 		dataLabels: { enabled: false },
 		tooltip: {
+			theme: chartTheme.tooltipTheme,
 			y: {
 				formatter: (val: number) => formatRupiah(val)
 			}
@@ -91,14 +110,18 @@
 <div class="mb-4 grid gap-3 lg:grid-cols-2 lg:gap-4">
 	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
 		<Heading tag="h3" class="mb-2 text-sm font-semibold sm:text-base">Ringkasan Periode</Heading>
-		<Chart options={donutOptions} class="w-full min-h-0" />
+		{#key chartTheme.mode}
+			<Chart options={donutOptions} class="dashboard-chart w-full min-h-0" />
+		{/key}
 	</Card>
 	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
 		<Heading tag="h3" class="mb-2 text-sm font-semibold sm:text-base">Transaksi Harian</Heading>
 		{#if dailySeries.labels.length === 0}
 			<p class="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Belum ada data untuk grafik</p>
 		{:else}
-			<Chart options={barOptions} class="w-full min-h-0" />
+			{#key chartTheme.mode}
+				<Chart options={barOptions} class="dashboard-chart w-full min-h-0" />
+			{/key}
 		{/if}
 	</Card>
 </div>

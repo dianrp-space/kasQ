@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api, ApiError } from '$lib/api';
 	import type { Transaction } from '$lib/types';
-	import { getDayName, HARI_LIST, toInputDate } from '$lib/utils';
+	import { getDayName, HARI_LIST, MAX_NOTA_FILES, toInputDate, txNotaKeys } from '$lib/utils';
 	import { Alert, Button, Checkbox, Input, Label, Modal, Select, Textarea } from 'flowbite-svelte';
 
 	let {
@@ -22,7 +22,7 @@
 	let deskripsi = $state('');
 	let total = $state('');
 	let keterangan = $state('');
-	let notaFile = $state<File | null>(null);
+	let notaFiles = $state<File[]>([]);
 	let removeNota = $state(false);
 	let error = $state('');
 	let loading = $state(false);
@@ -35,7 +35,7 @@
 			deskripsi = tx.deskripsi;
 			total = String(tx.total);
 			keterangan = tx.keterangan || '';
-			notaFile = null;
+			notaFiles = [];
 			removeNota = false;
 			error = '';
 		}
@@ -59,7 +59,9 @@
 			form.append('deskripsi', deskripsi);
 			form.append('total', total);
 			if (keterangan) form.append('keterangan', keterangan);
-			if (notaFile) form.append('nota', notaFile);
+			for (const file of notaFiles) {
+				form.append('nota', file);
+			}
 			if (removeNota) form.append('remove_nota', 'true');
 
 			await api.updateTransaction(teamId, tx.id, form);
@@ -114,20 +116,25 @@
 		</div>
 
 		<div>
-			<Label for="edit-nota">Ganti nota (opsional)</Label>
+			<Label for="edit-nota">Ganti nota (opsional, maks. {MAX_NOTA_FILES})</Label>
 			<input
 				id="edit-nota"
 				type="file"
 				accept="image/*"
-				class="block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-900 focus:outline-none"
+				multiple
+				class="block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-900 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
 				onchange={(e) => {
-					notaFile = (e.target as HTMLInputElement).files?.[0] ?? null;
-					if (notaFile) removeNota = false;
+					const picked = [...((e.target as HTMLInputElement).files ?? [])].slice(0, MAX_NOTA_FILES);
+					notaFiles = picked;
+					if (notaFiles.length) removeNota = false;
 				}}
 			/>
-			{#if tx?.nota_key}
-				<Checkbox bind:checked={removeNota} disabled={!!notaFile} class="mt-2">
-					Hapus nota yang ada
+			{#if notaFiles.length > 0}
+				<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{notaFiles.length} foto akan mengganti nota lama</p>
+			{/if}
+			{#if txNotaKeys(tx ?? {}).length > 0}
+				<Checkbox bind:checked={removeNota} disabled={notaFiles.length > 0} class="mt-2">
+					Hapus {txNotaKeys(tx ?? {}).length > 1 ? `semua nota (${txNotaKeys(tx ?? {}).length} foto)` : 'nota yang ada'}
 				</Checkbox>
 			{/if}
 		</div>

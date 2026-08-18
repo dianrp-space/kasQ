@@ -212,13 +212,18 @@ func (s *Service) ImportTransactionsFromExcel(ctx context.Context, teamID, userI
 				hari = dayNameID(parsed.Tanggal)
 			}
 
+			var notaKeys []string
+			if notaKey != nil && *notaKey != "" {
+				notaKeys = []string{*notaKey}
+			}
+
 			tx, balance, err := s.CreateTransactionFromWeb(ctx, teamID, userID, CreateWebTxInput{
 				Hari:      hari,
 				Tanggal:   parsed.Tanggal,
 				Jenis:     parsed.Jenis,
 				Deskripsi: parsed.Deskripsi,
 				Total:     parsed.Total,
-				NotaKey:   notaKey,
+				NotaKeys:  notaKeys,
 			})
 			if err != nil {
 				result.Failed++

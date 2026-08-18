@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Transaction } from '$lib/types';
-	import { formatDate, formatRupiah, jenisLabel, sourceLabel } from '$lib/utils';
+	import { formatDate, formatRupiah, jenisLabel, sourceLabel, txNotaKeys } from '$lib/utils';
 	import { Badge, Button, Checkbox } from 'flowbite-svelte';
 	import { EditOutline, EyeOutline, TrashBinOutline } from 'flowbite-svelte-icons';
 	import TxDetailModal from '$lib/components/TxDetailModal.svelte';
@@ -17,7 +17,7 @@
 		transactions: Transaction[];
 		selectable?: boolean;
 		selectedIds?: string[];
-		onViewNota?: (key: string) => void;
+		onViewNota?: (keys: string[]) => void;
 		onDownloadNota?: (key: string) => void;
 		onEdit?: (tx: Transaction) => void;
 		onDelete?: (tx: Transaction) => void;
@@ -103,9 +103,10 @@
 					</button>
 				{/if}
 				<div class="flex flex-wrap gap-2">
-					{#if tx.nota_key && onViewNota}
-						<Button size="xs" color="light" onclick={() => onViewNota(tx.nota_key!)}>
-							<EyeOutline class="me-1 h-3 w-3" /> Nota
+					{#if txNotaKeys(tx).length > 0 && onViewNota}
+						<Button size="xs" color="light" onclick={() => onViewNota(txNotaKeys(tx))}>
+							<EyeOutline class="me-1 h-3 w-3" />
+							{txNotaKeys(tx).length > 1 ? `Nota (${txNotaKeys(tx).length})` : 'Nota'}
 						</Button>
 					{/if}
 					{#if onEdit}
@@ -195,10 +196,13 @@
 						</td>
 						{#if onViewNota}
 							<td class="px-3 py-2">
-								{#if tx.nota_key}
+								{#if txNotaKeys(tx).length > 0}
 									<div class="flex gap-1">
-										<Button size="xs" color="light" onclick={() => onViewNota(tx.nota_key!)}>
+										<Button size="xs" color="light" onclick={() => onViewNota?.(txNotaKeys(tx))}>
 											<EyeOutline class="h-4 w-4" />
+											{#if txNotaKeys(tx).length > 1}
+												<span class="ms-1">{txNotaKeys(tx).length}</span>
+											{/if}
 										</Button>
 									</div>
 								{:else}

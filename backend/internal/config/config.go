@@ -7,13 +7,14 @@ import (
 )
 
 type Config struct {
-	DatabaseURL string
-	MinIO       MinIOConfig
-	SMTP        SMTPConfig
-	JWTSecret   string
-	AppURL      string
-	APIURL      string
-	Port        string
+	DatabaseURL      string
+	MinIO            MinIOConfig
+	SMTP             SMTPConfig
+	JWTSecret        string
+	AppURL           string
+	APIURL           string
+	Port             string
+	TelegramBotToken string
 }
 
 type MinIOConfig struct {
@@ -74,10 +75,11 @@ func Load() *Config {
 			SkipTLSVerify: os.Getenv("SMTP_INSECURE_SKIP_VERIFY") == "true",
 			Enabled:       smtpHost != "" && smtpUser != "" && smtpPass != "",
 		},
-		JWTSecret: getEnv("JWT_SECRET", "dev-jwt-secret-change-in-production"),
-		AppURL:    getEnv("APP_URL", "http://localhost:3008"),
-		APIURL:    getEnv("API_URL", "http://localhost:8084"),
-		Port:      getEnv("PORT", "8084"),
+		JWTSecret:        getEnv("JWT_SECRET", "dev-jwt-secret-change-in-production"),
+		AppURL:           getEnv("APP_URL", "http://localhost:3008"),
+		APIURL:           getEnv("API_URL", "http://localhost:8084"),
+		Port:             getEnv("PORT", "8084"),
+		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),
 	}
 }
 

@@ -18,10 +18,15 @@ import (
 )
 
 type Manager struct {
-	repo *repository.Repository
-	svc  *service.Service
-	bots map[uuid.UUID]*botInstance
-	mu   sync.RWMutex
+	repo        *repository.Repository
+	svc         *service.Service
+	appURL      string
+	systemToken string
+	system      *botInstance
+	bots        map[uuid.UUID]*botInstance
+	albums      map[string]*teleAlbum
+	mu          sync.RWMutex
+	albumMu     sync.Mutex
 }
 
 type BotProfile struct {
@@ -40,30 +45,76 @@ type botInstance struct {
 	profileLoaded bool
 }
 
-func NewManager(repo *repository.Repository, svc *service.Service) *Manager {
+func NewManager(repo *repository.Repository, svc *service.Service, systemToken, appURL string) *Manager {
 	return &Manager{
-		repo: repo,
-		svc:  svc,
-		bots: make(map[uuid.UUID]*botInstance),
+		repo:        repo,
+		svc:         svc,
+		appURL:      strings.TrimRight(strings.TrimSpace(appURL), "/"),
+		systemToken: strings.TrimSpace(systemToken),
+		bots:        make(map[uuid.UUID]*botInstance),
+		albums:      make(map[string]*teleAlbum),
+	}
+}
+
+func (m *Manager) SystemBotAvailable() bool {
+	return m.systemToken != ""
+}
+
+func (m *Manager) IsSystemToken(token string) bool {
+	return m.systemToken != "" && strings.TrimSpace(token) == m.systemToken
+}
+
+func (m *Manager) SystemBotProfile() BotProfile {
+	m.mu.RLock()
+	inst := m.system
+	m.mu.RUnlock()
+	if inst == nil {
+		return BotProfile{}
+	}
+	if !inst.profileLoaded {
+		m.refreshInstanceProfile(inst, "system")
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.system == nil {
+		return BotProfile{}
+	}
+	return BotProfile{
+		Name:      m.system.displayName,
+		Username:  m.system.username,
+		HasAvatar: m.system.avatarFileID != "",
 	}
 }
 
 func (m *Manager) StartAll(ctx context.Context) {
+	if m.systemToken != "" {
+		if err := m.startSystemBot(); err != nil {
+			log.Printf("tele: start system bot: %v", err)
+		}
+	}
 	integrations, err := m.repo.ListEnabledTeleIntegrations(ctx)
 	if err != nil {
 		log.Printf("tele: list integrations: %v", err)
 		return
 	}
 	for _, i := range integrations {
-		if i.TeleBotToken != nil {
-			if err := m.StartTeam(i.TeamID, *i.TeleBotToken); err != nil {
-				log.Printf("tele: start team %s: %v", i.TeamID, err)
-			}
+		if i.TeleUseSystemBot || i.TeleBotToken == nil {
+			continue
+		}
+		if err := m.StartTeam(i.TeamID, *i.TeleBotToken); err != nil {
+			log.Printf("tele: start team %s: %v", i.TeamID, err)
 		}
 	}
 }
 
 func (m *Manager) StartTeam(teamID uuid.UUID, token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return fmt.Errorf("bot token kosong")
+	}
+	if m.IsSystemToken(token) {
+		return fmt.Errorf("token bot sistem tidak bisa dipakai sebagai bot sendiri — pilih opsi Bot KasQ")
+	}
 	m.StopTeam(teamID)
 
 	pref := tele.Settings{
@@ -84,8 +135,11 @@ func (m *Manager) StartTeam(teamID uuid.UUID, token string) error {
 	b.Handle("/saldo", func(c tele.Context) error {
 		return m.handleSaldo(ctx, teamID, c)
 	})
+	b.Handle("/link", func(c tele.Context) error {
+		return m.handleLink(ctx, teamID, c)
+	})
 	b.Handle("/start", func(c tele.Context) error {
-		return c.Send("KasQ bot aktif.\n\nCek saldo: /saldo atau !saldo\nInput transaksi:\nout#Senin#150826#Deskripsi#12000#Keterangan\n\n(Keterangan opsional)")
+		return c.Send("KasQ bot aktif.\n\nCek saldo: /saldo atau !saldo\nLink laporan: /link atau !link\nInput transaksi:\nout#Senin#150826#Deskripsi#12000#Keterangan\nout#150826#Deskripsi#12000\n\nHari dan keterangan opsional.")
 	})
 	b.Handle(tele.OnText, func(c tele.Context) error {
 		return m.handleText(ctx, teamID, c)
@@ -105,6 +159,9 @@ func (m *Manager) StartTeam(teamID uuid.UUID, token string) error {
 }
 
 func (m *Manager) GetBotProfile(teamID uuid.UUID) BotProfile {
+	if m.teamUsesSystemBot(teamID) {
+		return m.SystemBotProfile()
+	}
 	m.mu.RLock()
 	inst, ok := m.bots[teamID]
 	m.mu.RUnlock()
@@ -127,19 +184,47 @@ func (m *Manager) GetBotProfile(teamID uuid.UUID) BotProfile {
 }
 
 func (m *Manager) OpenBotAvatar(teamID uuid.UUID) (io.ReadCloser, string, error) {
+	if m.teamUsesSystemBot(teamID) {
+		return m.openInstanceAvatar(m.systemBot(), "system")
+	}
 	m.mu.RLock()
 	inst, ok := m.bots[teamID]
 	m.mu.RUnlock()
-	if !ok || inst.avatarFileID == "" {
+	if !ok {
+		return nil, "", fmt.Errorf("avatar not available")
+	}
+	return m.openInstanceAvatar(inst, teamID.String())
+}
+
+func (m *Manager) refreshBotProfile(teamID uuid.UUID) {
+	m.mu.RLock()
+	inst, ok := m.bots[teamID]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+	m.refreshInstanceProfile(inst, teamID.String())
+}
+
+func (m *Manager) teamUsesSystemBot(teamID uuid.UUID) bool {
+	integ, err := m.repo.GetIntegration(context.Background(), teamID)
+	return err == nil && integ.TeleUseSystemBot
+}
+
+func (m *Manager) systemBot() *botInstance {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.system
+}
+
+func (m *Manager) openInstanceAvatar(inst *botInstance, label string) (io.ReadCloser, string, error) {
+	if inst == nil || inst.bot == nil {
 		return nil, "", fmt.Errorf("avatar not available")
 	}
 	if !inst.profileLoaded {
-		m.refreshBotProfile(teamID)
+		m.refreshInstanceProfile(inst, label)
 	}
-	m.mu.RLock()
-	inst, ok = m.bots[teamID]
-	m.mu.RUnlock()
-	if !ok || inst.avatarFileID == "" {
+	if inst.avatarFileID == "" {
 		return nil, "", fmt.Errorf("avatar not available")
 	}
 	file := tele.File{FileID: inst.avatarFileID}
@@ -154,11 +239,8 @@ func (m *Manager) OpenBotAvatar(teamID uuid.UUID) (io.ReadCloser, string, error)
 	return reader, contentType, nil
 }
 
-func (m *Manager) refreshBotProfile(teamID uuid.UUID) {
-	m.mu.RLock()
-	inst, ok := m.bots[teamID]
-	m.mu.RUnlock()
-	if !ok || inst.bot == nil || inst.bot.Me == nil {
+func (m *Manager) refreshInstanceProfile(inst *botInstance, label string) {
+	if inst == nil || inst.bot == nil || inst.bot.Me == nil {
 		return
 	}
 
@@ -168,23 +250,21 @@ func (m *Manager) refreshBotProfile(teamID uuid.UUID) {
 
 	photos, err := inst.bot.ProfilePhotosOf(inst.bot.Me)
 	if err != nil {
-		log.Printf("tele: profile photos team %s: %v", teamID, err)
+		log.Printf("tele: profile photos %s: %v", label, err)
 	} else if len(photos) > 0 && photos[0].FileID != "" {
 		avatarFileID = photos[0].FileID
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if inst, ok := m.bots[teamID]; ok {
-		if name != "" {
-			inst.displayName = name
-		}
-		if username != "" {
-			inst.username = username
-		}
-		inst.avatarFileID = avatarFileID
-		inst.profileLoaded = true
+	if name != "" {
+		inst.displayName = name
 	}
+	if username != "" {
+		inst.username = username
+	}
+	inst.avatarFileID = avatarFileID
+	inst.profileLoaded = true
 }
 
 func (m *Manager) StopTeam(teamID uuid.UUID) {
@@ -238,6 +318,26 @@ func (m *Manager) handleSaldo(ctx context.Context, teamID uuid.UUID, c tele.Cont
 	return c.Send(bot.FormatSaldoReply(team.Name, balance.CurrentBalance))
 }
 
+func (m *Manager) handleLink(ctx context.Context, teamID uuid.UUID, c tele.Context) error {
+	integ, err := m.repo.GetIntegration(ctx, teamID)
+	if err != nil {
+		return c.Send("❌ Integrasi belum siap")
+	}
+	if !m.chatAllowed(integ, c.Chat().ID) {
+		return m.rejectChat(c, integ)
+	}
+
+	team, err := m.repo.GetTeam(ctx, teamID)
+	if err != nil {
+		return c.Send("❌ Tim/Kas tidak ditemukan")
+	}
+	rt, err := m.repo.GetReportToken(ctx, teamID)
+	if err != nil || !rt.IsActive {
+		return c.Send("❌ Link laporan publik belum tersedia")
+	}
+	return c.Send(bot.FormatLinkReply(team.Name, bot.PublicReportURL(m.appURL, rt.Token)))
+}
+
 func (m *Manager) handleText(ctx context.Context, teamID uuid.UUID, c tele.Context) error {
 	text := strings.TrimSpace(c.Text())
 	if text == "" {
@@ -267,11 +367,17 @@ func (m *Manager) handleText(ctx context.Context, teamID uuid.UUID, c tele.Conte
 	if isSaldoCommand(text) {
 		return m.handleSaldo(ctx, teamID, c)
 	}
+	if isLinkCommand(text) {
+		return m.handleLink(ctx, teamID, c)
+	}
 
 	parsed, err := bot.ParseMessage(text, models.SourceTele)
 	if err != nil {
 		if err == bot.ErrSaldoCommand {
 			return m.handleSaldo(ctx, teamID, c)
+		}
+		if err == bot.ErrLinkCommand {
+			return m.handleLink(ctx, teamID, c)
 		}
 		return c.Send(bot.FormatErrorReply(err))
 	}
@@ -280,7 +386,7 @@ func (m *Manager) handleText(ctx context.Context, teamID uuid.UUID, c tele.Conte
 	if err != nil {
 		return c.Send("❌ Gagal simpan: " + err.Error())
 	}
-	return c.Send(bot.FormatSuccessReply(tx, balance.CurrentBalance, team.Name, false))
+	return c.Send(bot.FormatSuccessReply(tx, balance.CurrentBalance, team.Name, 0))
 }
 
 func (m *Manager) handlePhoto(ctx context.Context, teamID uuid.UUID, c tele.Context) error {
@@ -292,72 +398,43 @@ func (m *Manager) handlePhoto(ctx context.Context, teamID uuid.UUID, c tele.Cont
 		return m.rejectChat(c, integ)
 	}
 
-	team, err := m.repo.GetTeam(ctx, teamID)
-	if err != nil {
-		return c.Send("❌ Tim/Kas tidak ditemukan")
-	}
-
-	caption := c.Message().Caption
-	if caption == "" {
-		return c.Send("❌ Caption wajib berisi format transaksi")
-	}
-
 	file := c.Message().Photo
 	if file == nil {
 		return c.Send("❌ Foto tidak valid")
 	}
-
-	b := m.muBot(teamID)
-	if b == nil {
-		return c.Send("❌ Bot tidak aktif")
+	item := teleAlbumItem{
+		file:    file.File,
+		caption: strings.TrimSpace(c.Message().Caption),
 	}
-	reader, err := b.File(&file.File)
-	if err != nil {
-		return c.Send("❌ Gagal unduh foto")
+	albumID := strings.TrimSpace(c.Message().AlbumID)
+	if albumID == "" {
+		return m.commitTelePhotos(ctx, teamID, c, []teleAlbumItem{item})
 	}
-	defer reader.Close()
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return c.Send("❌ Gagal baca foto")
-	}
-	if len(data) == 0 {
-		return c.Send("❌ Foto kosong")
-	}
-
-	filename, contentType := imageMetaFromBytes(data)
-	var notaKey *string
-	key, err := m.svc.UploadNota(ctx, teamID, filename, data, contentType)
-	if err != nil {
-		log.Printf("tele: upload nota team %s: %v", teamID, err)
-	} else {
-		notaKey = &key
-	}
-
-	parsed, err := bot.ParseMessage(caption, models.SourceTele)
-	if err != nil {
-		return c.Send(bot.FormatErrorReply(err))
-	}
-
-	tx, balance, err := m.svc.CreateTransactionFromBot(ctx, teamID, *parsed, notaKey)
-	if err != nil {
-		return c.Send("❌ Gagal simpan: " + err.Error())
-	}
-	hasNota := notaKey != nil
-	return c.Send(bot.FormatSuccessReply(tx, balance.CurrentBalance, team.Name, hasNota))
-}
-
-func (m *Manager) muBot(teamID uuid.UUID) *tele.Bot {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if inst, ok := m.bots[teamID]; ok {
-		return inst.bot
-	}
+	m.enqueueTeleAlbum(ctx, teamID, c, albumID, item)
 	return nil
 }
 
+func (m *Manager) botForTeam(teamID uuid.UUID) *tele.Bot {
+	m.mu.RLock()
+	if inst, ok := m.bots[teamID]; ok {
+		b := inst.bot
+		m.mu.RUnlock()
+		return b
+	}
+	sys := m.system
+	m.mu.RUnlock()
+	if sys == nil || sys.bot == nil || !m.teamUsesSystemBot(teamID) {
+		return nil
+	}
+	return sys.bot
+}
+
 func isSaldoCommand(text string) bool {
-	return strings.EqualFold(strings.TrimSpace(text), "!saldo")
+	return bot.IsSaldoCommand(text)
+}
+
+func isLinkCommand(text string) bool {
+	return bot.IsLinkCommand(text)
 }
 
 func imageMetaFromBytes(data []byte) (filename, contentType string) {

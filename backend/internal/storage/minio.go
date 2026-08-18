@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,8 +23,9 @@ type MinIOStorage struct {
 
 func New(cfg config.MinIOConfig) (*MinIOStorage, error) {
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure: cfg.UseSSL,
+		Creds:        credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Secure:       cfg.UseSSL,
+		BucketLookup: minio.BucketLookupPath,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("minio client: %w", err)
@@ -33,8 +35,9 @@ func New(cfg config.MinIOConfig) (*MinIOStorage, error) {
 	if cfg.PublicEndpoint != "" &&
 		(cfg.PublicEndpoint != cfg.Endpoint || cfg.PublicUseSSL != cfg.UseSSL) {
 		presignClient, err = minio.New(cfg.PublicEndpoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-			Secure: cfg.PublicUseSSL,
+			Creds:        credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+			Secure:       cfg.PublicUseSSL,
+			BucketLookup: minio.BucketLookupPath,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("minio presign client: %w", err)
@@ -81,6 +84,29 @@ func (s *MinIOStorage) Delete(ctx context.Context, key string) error {
 	return s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
 }
 
+func IsAccessDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	errResp := minio.ToErrorResponse(err)
+	return errResp.Code == "AccessDenied" || errResp.StatusCode == 403
+}
+
+func contentTypeFromKey(key string) string {
+	switch strings.ToLower(filepath.Ext(key)) {
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	default:
+		return "application/octet-stream"
+	}
+}
+
 func (s *MinIOStorage) Exists(ctx context.Context, key string) (bool, error) {
 	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err == nil {
@@ -98,14 +124,13 @@ func (s *MinIOStorage) GetObject(ctx context.Context, key string) (io.ReadCloser
 	if err != nil {
 		return nil, "", err
 	}
-	info, err := obj.Stat()
-	if err != nil {
+	contentType := contentTypeFromKey(key)
+	info, statErr := obj.Stat()
+	if statErr == nil && info.ContentType != "" {
+		contentType = info.ContentType
+	} else if statErr != nil && !IsAccessDenied(statErr) {
 		_ = obj.Close()
-		return nil, "", err
-	}
-	contentType := info.ContentType
-	if contentType == "" {
-		contentType = "application/octet-stream"
+		return nil, "", statErr
 	}
 	return obj, contentType, nil
 }

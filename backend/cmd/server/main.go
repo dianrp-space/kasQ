@@ -53,8 +53,8 @@ func main() {
 		log.Fatalf("wa dir: %v", err)
 	}
 
-	waManager := whatsapp.NewManager(repo, svc, waDataDir)
-	teleManager := telegram.NewManager(repo, svc)
+	waManager := whatsapp.NewManager(repo, svc, waDataDir, cfg.AppURL)
+	teleManager := telegram.NewManager(repo, svc, cfg.TelegramBotToken, cfg.AppURL)
 
 	go waManager.StartAll(ctx)
 	go teleManager.StartAll(ctx)

@@ -52,6 +52,22 @@ export function formatMonthLabel(from: string): string {
 	});
 }
 
+/** Salam sesuai jam lokal (WIB / timezone browser). */
+export function timeGreeting(date = new Date()): string {
+	const h = date.getHours();
+	if (h >= 4 && h < 11) return 'Selamat pagi';
+	if (h >= 11 && h < 15) return 'Selamat siang';
+	if (h >= 15 && h < 19) return 'Selamat sore';
+	return 'Selamat malam';
+}
+
+export function greetingWithName(name: string, date = new Date()): string {
+	const trimmed = name.trim();
+	if (!trimmed) return timeGreeting(date);
+	const first = trimmed.split(/\s+/)[0];
+	return `${timeGreeting(date)}, ${first}`;
+}
+
 export function jenisLabel(j: 'in' | 'out'): string {
 	return j === 'in' ? 'Pemasukan' : 'Pengeluaran';
 }
@@ -59,4 +75,75 @@ export function jenisLabel(j: 'in' | 'out'): string {
 export function sourceLabel(s: 'web' | 'wa' | 'tele'): string {
 	const map = { web: 'Web', wa: 'WhatsApp', tele: 'Telegram' };
 	return map[s];
+}
+
+export const MAX_NOTA_FILES = 10;
+
+export function txNotaKeys(tx: { nota_keys?: string[]; nota_key?: string }): string[] {
+	if (tx.nota_keys && tx.nota_keys.length > 0) return tx.nota_keys;
+	if (tx.nota_key) return [tx.nota_key];
+	return [];
+}
+
+export function notaFilenameFromKey(key: string, index = 0): string {
+	const base = key.split('/').pop()?.trim();
+	if (base) return base;
+	return `nota-${index + 1}.jpg`;
+}
+
+function uniqueArchiveNames(filenames: string[]): string[] {
+	const seen = new Map<string, number>();
+	return filenames.map((name) => {
+		const count = seen.get(name) ?? 0;
+		seen.set(name, count + 1);
+		if (count === 0) return name;
+		const dot = name.lastIndexOf('.');
+		if (dot > 0) {
+			return `${name.slice(0, dot)}-${count + 1}${name.slice(dot)}`;
+		}
+		return `${name}-${count + 1}`;
+	});
+}
+
+export async function triggerDownloadUrl(url: string, filename: string): Promise<void> {
+	const res = await fetch(url);
+	if (!res.ok) throw new Error('download failed');
+	const blob = await res.blob();
+	const objectUrl = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = objectUrl;
+	a.download = filename;
+	a.click();
+	URL.revokeObjectURL(objectUrl);
+}
+
+/** Unduh banyak file sebagai satu arsip ZIP (seperti Immich / Google Drive). */
+export async function downloadFilesAsZip(
+	items: { url: string; filename: string }[],
+	zipName = 'nota.zip'
+): Promise<void> {
+	if (items.length === 0) return;
+	if (items.length === 1) {
+		await triggerDownloadUrl(items[0].url, items[0].filename);
+		return;
+	}
+
+	const { zipSync } = await import('fflate');
+	const names = uniqueArchiveNames(items.map((i) => i.filename));
+	const archive: Record<string, Uint8Array> = {};
+
+	for (let i = 0; i < items.length; i++) {
+		const res = await fetch(items[i].url);
+		if (!res.ok) throw new Error(`gagal unduh ${names[i]}`);
+		archive[names[i]] = new Uint8Array(await res.arrayBuffer());
+	}
+
+	const zipped = zipSync(archive);
+	const blob = new Blob([zipped], { type: 'application/zip' });
+	const objectUrl = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = objectUrl;
+	a.download = zipName.endsWith('.zip') ? zipName : `${zipName}.zip`;
+	a.click();
+	URL.revokeObjectURL(objectUrl);
 }
