@@ -625,7 +625,7 @@ func (m *Manager) sessionLoginMode(teamID uuid.UUID) string {
 }
 
 func (m *Manager) shouldProcessMessage(teamID uuid.UUID, msg *events.Message) bool {
-	if msg.Message == nil || msg.Info.IsFromMe {
+	if msg.Message == nil {
 		return false
 	}
 	if msg.Info.Chat.Server == "broadcast" || msg.Info.Chat.Server == "newsletter" {
@@ -638,12 +638,41 @@ func (m *Manager) shouldProcessMessage(teamID uuid.UUID, msg *events.Message) bo
 		return false
 	}
 
+	m.mu.RLock()
+	s := m.sessions[teamID]
+	m.mu.RUnlock()
+	if s == nil || s.client == nil {
+		return false
+	}
+	// Pesan sendiri di chat orang lain diabaikan. Self-chat (catatan/nomor sendiri) tetap diproses.
+	if msg.Info.IsFromMe && !isOwnChat(s.client, msg.Info.Chat) {
+		return false
+	}
+
 	key := teamID.String() + ":" + msg.Info.ID
 	if _, seen := m.seenMessages.Load(key); seen {
 		return false
 	}
 	m.seenMessages.Store(key, time.Now())
 	return true
+}
+
+func isOwnChat(client *whatsmeow.Client, chat types.JID) bool {
+	if client == nil || client.Store == nil || chat.IsEmpty() {
+		return false
+	}
+	if chat.Server == types.GroupServer || chat.Server == "broadcast" || chat.Server == "newsletter" {
+		return false
+	}
+	own := client.Store.GetJID()
+	if !own.IsEmpty() && chat.User == own.User {
+		return true
+	}
+	lid := client.Store.GetLID()
+	if !lid.IsEmpty() && chat.User == lid.User {
+		return true
+	}
+	return false
 }
 
 func messageSenderPhones(msg *events.Message, client *whatsmeow.Client) []string {
@@ -686,6 +715,9 @@ func messageSenderPhones(msg *events.Message, client *whatsmeow.Client) []string
 				addJID(pn)
 			}
 		}
+	}
+	if msg.Info.IsFromMe && client != nil && client.Store != nil {
+		addJID(client.Store.GetJID())
 	}
 	return out
 }

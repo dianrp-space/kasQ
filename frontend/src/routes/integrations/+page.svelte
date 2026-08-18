@@ -387,7 +387,10 @@
 				{integration?.wa_enabled ? waStatus : 'OFF'}
 			</Badge>
 		</div>
-		<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">Hubungkan akun WA untuk menjadi Bot via QR code atau kode pairing.</p>
+		<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
+			Hubungkan akun WA untuk menjadi Bot via QR code atau kode pairing. Boleh nomor khusus bot, atau nomor pribadi: chat ke
+			<strong>diri sendiri</strong> (Pesan tersimpan / nomor sendiri), lalu whitelist nomor itu agar chat dari orang lain tidak dibalas.
+		</p>
 		{#if integration?.wa_enabled && waStatus === 'connected' && (waPhone || waName)}
 			<div class="mb-4 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100">
 				{#if waPictureUrl}
@@ -477,6 +480,7 @@
 			<Heading tag="h3" class="mb-2 text-base">Nomor yang boleh chat</Heading>
 			<p class="mb-3 text-sm text-slate-500 dark:text-slate-400">
 				Kosongkan daftar = semua nomor dibalas. Isi daftar = hanya nomor terdaftar yang dibalas; nomor lain diabaikan tanpa balasan.
+				Kalau bot memakai nomor pribadi, masukkan nomor itu di sini supaya hanya self-chat yang dijawab.
 			</p>
 			<Label for="waAllowedPhones">Nomor WA (format internasional, satu per baris)</Label>
 			<Textarea

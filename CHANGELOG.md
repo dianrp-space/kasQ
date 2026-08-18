@@ -7,6 +7,17 @@ versi mengikuti [Semantic Versioning](https://semver.org/lang/id/).
 
 Sumber versi aplikasi: file [`VERSION`](VERSION) (ditampilkan di sidebar desktop dan header mobile).
 
+## [1.0.1] — 2026-08-18
+
+### Ditambahkan
+
+- Bot WhatsApp mendukung **self-chat**: login nomor pribadi, kirim perintah ke diri sendiri (Pesan tersimpan / nomor sendiri)
+- Teks bantuan di Integrasi WA: whitelist nomor bot sendiri agar chat dari orang lain tidak dibalas
+
+### Diperbaiki
+
+- Pesan `IsFromMe` di self-chat sebelumnya diabaikan, jadi chat ke nomor sendiri tidak dijawab
+
 ## [1.0.0] — 2026-08-18
 
 Rilis pertama yang diberi nomor versi.
