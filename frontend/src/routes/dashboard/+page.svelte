@@ -11,12 +11,21 @@
 	import { toast } from '$lib/toast.svelte';
 	import { formatMonthLabel, getMonthRange, greetingWithName, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
-	import { Button, Card, Heading, Label, Select } from 'flowbite-svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { Button, Card, Heading, Input, Label, Select } from 'flowbite-svelte';
 	import MonthPeriodFilter from '$lib/components/MonthPeriodFilter.svelte';
+	import { browser } from '$app/environment';
+	import { SearchOutline } from 'flowbite-svelte-icons';
 
-	const PAGE_SIZE = 20;
+	const PAGE_SIZES = [20, 50, 100, 200] as const;
+	const PAGE_SIZE_KEY = 'kasq.dashboard.pageSize';
 	const CHART_TX_LIMIT = 5000;
+
+	function readPageSize(): number {
+		if (!browser) return 20;
+		const n = Number(localStorage.getItem(PAGE_SIZE_KEY));
+		return (PAGE_SIZES as readonly number[]).includes(n) ? n : 20;
+	}
 
 	let user = $state<User | null>(null);
 	let teams = $state<Team[]>([]);
@@ -26,8 +35,13 @@
 	let chartTransactions = $state<Transaction[]>([]);
 	let txTotal = $state(0);
 	let currentPage = $state(1);
+	let pageSize = $state(20);
+	let pageSizeValue = $state('20');
 	let filterJenis = $state('');
 	let filterMonth = $state(toInputMonth());
+	let searchInput = $state('');
+	let searchQuery = $state('');
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 	let notaPreviewOpen = $state(false);
 	let notaPreviewSrcs = $state<string[]>([]);
 	let notaPreviewKeys = $state<string[]>([]);
@@ -38,10 +52,13 @@
 	const needsTeam = $derived(user?.role === 'ops' && !user?.team_id);
 	const periodRange = $derived(getMonthRange(filterMonth));
 	const periodLabel = $derived(formatMonthLabel(periodRange.from));
-	const totalPages = $derived(Math.max(1, Math.ceil(txTotal / PAGE_SIZE)));
-	const rangeStart = $derived(txTotal === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1);
-	const rangeEnd = $derived(Math.min(currentPage * PAGE_SIZE, txTotal));
+	const totalPages = $derived(Math.max(1, Math.ceil(txTotal / pageSize)));
+	const rangeStart = $derived(txTotal === 0 ? 0 : (currentPage - 1) * pageSize + 1);
+	const rangeEnd = $derived(Math.min(currentPage * pageSize, txTotal));
 	const pageTitle = $derived(user?.name ? greetingWithName(user.name) : 'Dashboard');
+	const emptyTxMessage = $derived(
+		searchQuery.trim() ? 'Tidak ada transaksi yang cocok dengan pencarian' : 'Belum ada transaksi'
+	);
 
 	function buildParams(includeJenis = true) {
 		const params: Record<string, string> = {};
@@ -68,11 +85,12 @@
 
 	async function loadTeamData() {
 		const balanceParams = buildParams(false);
-		const tableParams = {
+		const tableParams: Record<string, string> = {
 			...buildParams(true),
 			page: String(currentPage),
-			limit: String(PAGE_SIZE)
+			limit: String(pageSize)
 		};
+		if (searchQuery.trim()) tableParams.q = searchQuery.trim();
 		const chartParams = {
 			...buildParams(true),
 			page: '1',
@@ -93,7 +111,7 @@
 		const visible = new Set(transactions.map((tx) => tx.id));
 		selectedIds = selectedIds.filter((id) => visible.has(id));
 
-		const maxPage = Math.max(1, Math.ceil(txRes.total / PAGE_SIZE));
+		const maxPage = Math.max(1, Math.ceil(txRes.total / pageSize));
 		if (currentPage > maxPage) {
 			currentPage = maxPage;
 			await loadTeamData();
@@ -103,7 +121,38 @@
 	function applyFilter() {
 		currentPage = 1;
 		selectedIds = [];
+		searchQuery = searchInput.trim();
 		loadTeamData();
+	}
+
+	function onSearchInput() {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => {
+			searchQuery = searchInput.trim();
+			currentPage = 1;
+			selectedIds = [];
+			loadTeamData();
+		}, 350);
+	}
+
+	function changePageSize(value: string) {
+		const n = Number(value);
+		if (!(PAGE_SIZES as readonly number[]).includes(n) || n === pageSize) return;
+		pageSize = n;
+		pageSizeValue = String(n);
+		if (browser) localStorage.setItem(PAGE_SIZE_KEY, String(n));
+		currentPage = 1;
+		selectedIds = [];
+		loadTeamData();
+	}
+
+	async function reorderTxs(ids: string[]) {
+		try {
+			await api.reorderTransactions(selectedTeam, ids);
+		} catch {
+			toast.error('Gagal simpan urutan');
+			await loadTeamData();
+		}
 	}
 
 	function goToPage(page: number) {
@@ -219,8 +268,12 @@
 	}
 
 	onMount(() => {
+		pageSize = readPageSize();
+		pageSizeValue = String(pageSize);
 		load();
 	});
+
+	onDestroy(() => clearTimeout(searchTimer));
 </script>
 
 <svelte:head><title>{pageTitle} — KasQ</title></svelte:head>
@@ -255,15 +308,30 @@
 				<div class="col-span-2 md:max-w-[180px]">
 					<MonthPeriodFilter bind:value={filterMonth} />
 				</div>
-				<div class="col-span-2 md:max-w-[140px]">
+				<div class="col-span-2 md:min-w-[11.5rem] md:max-w-[13rem]">
 					<Label for="filter-jenis" class="mb-1 block text-xs text-slate-500 dark:text-slate-400">Jenis</Label>
-					<Select id="filter-jenis" bind:value={filterJenis} placeholder="Semua jenis" class="w-full">
+					<Select id="filter-jenis" bind:value={filterJenis} placeholder="" class="w-full">
 						<option value="">Semua jenis</option>
 						<option value="in">Pemasukan</option>
 						<option value="out">Pengeluaran</option>
 					</Select>
 				</div>
-				<Button color="light" class="col-span-2 md:col-span-1" onclick={applyFilter}>Terapkan</Button>
+				<div class="col-span-2 md:min-w-[14rem] md:max-w-xs md:flex-1">
+					<Label for="filter-search" class="mb-1 block text-xs text-slate-500 dark:text-slate-400">Cari</Label>
+					<div class="relative">
+						<SearchOutline class="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+						<Input
+							id="filter-search"
+							class="w-full ps-8"
+							placeholder="Deskripsi, keterangan, total…"
+							bind:value={searchInput}
+							oninput={onSearchInput}
+						/>
+					</div>
+				</div>
+				<Button color="primary" class="col-span-2 bg-primary-600 text-white hover:bg-primary-700 md:col-span-1" onclick={applyFilter}>
+					Terapkan
+				</Button>
 				{#if selectedIds.length > 0}
 					<Button color="red" outline class="col-span-2 md:col-span-1" onclick={batchDelete}>
 						Hapus ({selectedIds.length})
@@ -271,21 +339,45 @@
 				{/if}
 			</div>
 		</div>
+		<p class="mb-2 text-xs text-slate-500 dark:text-slate-400">
+			Seret ikon garis (desktop) atau panah (ponsel) untuk menyusun ulang transaksi di tanggal yang sama.
+		</p>
 		<TxTable
 			{transactions}
 			selectable
+			sortable
+			emptyMessage={emptyTxMessage}
 			bind:selectedIds
 			onViewNota={viewNota}
 			onDownloadNota={downloadNota}
 			onEdit={editTx}
 			onDelete={deleteTx}
+			onReorder={reorderTxs}
 		/>
-		{#if txTotal > PAGE_SIZE}
-			<div class="mt-4 flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-700 sm:flex-row">
-				<p class="text-sm text-slate-500 dark:text-slate-400">
+		<div class="mt-4 flex flex-col items-stretch justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-700 sm:flex-row sm:items-center">
+			<p class="text-sm text-slate-500 dark:text-slate-400">
+				{#if txTotal > 0}
 					Menampilkan {rangeStart}–{rangeEnd} dari {txTotal} transaksi
-				</p>
+				{:else}
+					Tidak ada transaksi
+				{/if}
+			</p>
+			<div class="flex flex-wrap items-center gap-2">
 				<div class="flex items-center gap-2">
+					<Label for="page-size" class="mb-0 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">Per halaman</Label>
+					<Select
+						id="page-size"
+						class="w-[5.5rem]"
+						placeholder=""
+						bind:value={pageSizeValue}
+						onchange={() => changePageSize(pageSizeValue)}
+					>
+						{#each PAGE_SIZES as size}
+							<option value={String(size)}>{size}</option>
+						{/each}
+					</Select>
+				</div>
+				{#if totalPages > 1}
 					<Button size="sm" color="light" disabled={currentPage <= 1} onclick={() => goToPage(currentPage - 1)}>
 						Sebelumnya
 					</Button>
@@ -300,9 +392,9 @@
 					>
 						Selanjutnya
 					</Button>
-				</div>
+				{/if}
 			</div>
-		{/if}
+		</div>
 	</Card>
 {/if}
 

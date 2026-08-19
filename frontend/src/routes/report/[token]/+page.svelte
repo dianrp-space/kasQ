@@ -136,15 +136,15 @@
 						<div class="col-span-2 md:max-w-[180px]">
 							<MonthPeriodFilter bind:value={filterMonth} />
 						</div>
-						<div class="col-span-2 md:max-w-[140px]">
+						<div class="col-span-2 md:min-w-[11.5rem] md:max-w-[13rem]">
 							<Label for="filter-jenis" class="mb-1 block text-xs text-slate-500 dark:text-slate-400">Jenis</Label>
-							<Select id="filter-jenis" bind:value={filterJenis} placeholder="Semua jenis" class="w-full">
+							<Select id="filter-jenis" bind:value={filterJenis} placeholder="" class="w-full">
 								<option value="">Semua jenis</option>
 								<option value="in">Pemasukan</option>
 								<option value="out">Pengeluaran</option>
 							</Select>
 						</div>
-						<Button color="light" class="col-span-2 md:col-span-1" onclick={applyFilter}>Terapkan</Button>
+						<Button color="primary" class="col-span-2 bg-primary-600 text-white hover:bg-primary-700 md:col-span-1" onclick={applyFilter}>Terapkan</Button>
 					</div>
 				</div>
 				<TxTable transactions={report.transactions} onViewNota={viewNota} onDownloadNota={downloadNota} />

@@ -95,6 +95,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			protected.POST("/teams/:id/transactions", h.CreateTransaction)
 			protected.POST("/teams/:id/transactions/import", h.ImportTransactions)
 			protected.GET("/teams/:id/transactions/import/template", h.ImportTemplate)
+			protected.PUT("/teams/:id/transactions/reorder", h.ReorderTransactions)
 			protected.PUT("/teams/:id/transactions/:txId", h.UpdateTransaction)
 			protected.DELETE("/teams/:id/transactions/:txId", h.DeleteTransaction)
 			protected.POST("/teams/:id/transactions/batch-delete", h.BatchDeleteTransactions)
@@ -414,6 +415,9 @@ func (h *Handler) ListTransactions(c *gin.Context) {
 			filter.DateTo = &t
 		}
 	}
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		filter.Search = q
+	}
 	total, err := h.repo.CountTransactions(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -668,6 +672,39 @@ func (h *Handler) BatchDeleteTransactions(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "deleted": result.Deleted, "balance": result.Balance})
+}
+
+func (h *Handler) ReorderTransactions(c *gin.Context) {
+	teamID, err := parseTeamID(c)
+	if err != nil || !h.canAccessTeam(c, teamID) {
+		h.respondTeamForbidden(c)
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || len(body.IDs) < 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ids wajib minimal 2 UUID transaksi"})
+		return
+	}
+	txIDs := make([]uuid.UUID, 0, len(body.IDs))
+	for _, raw := range body.IDs {
+		id, err := uuid.Parse(strings.TrimSpace(raw))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id transaksi tidak valid: " + raw})
+			return
+		}
+		txIDs = append(txIDs, id)
+	}
+	if err := h.repo.ReorderTransactions(c.Request.Context(), teamID, txIDs); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "transaksi tidak ditemukan"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) GetNotaURL(c *gin.Context) {

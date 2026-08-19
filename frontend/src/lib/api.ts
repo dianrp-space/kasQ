@@ -125,6 +125,11 @@ export const api = {
 			`/api/teams/${teamId}/transactions/batch-delete`,
 			{ method: 'POST', body: JSON.stringify({ ids }) }
 		),
+	reorderTransactions: (teamId: string, ids: string[]) =>
+		request<{ ok: boolean }>(`/api/teams/${teamId}/transactions/reorder`, {
+			method: 'PUT',
+			body: JSON.stringify({ ids })
+		}),
 	importTransactions: (teamId: string, form: FormData) =>
 		request<import('./types').ImportResult>(`/api/teams/${teamId}/transactions/import`, {
 			method: 'POST',

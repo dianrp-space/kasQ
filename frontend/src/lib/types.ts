@@ -45,6 +45,7 @@ export interface Transaction {
 	nota_keys?: string[];
 	keterangan?: string;
 	source: 'web' | 'wa' | 'tele';
+	sort_order?: number;
 	created_at: string;
 	creator_name?: string;
 }

@@ -62,6 +62,7 @@ type Transaction struct {
 	notaRaw     *string    `json:"-"`
 	Keterangan  *string    `json:"keterangan,omitempty"`
 	Source      TxSource   `json:"source"`
+	SortOrder   int        `json:"sort_order"`
 	CreatedAt   time.Time  `json:"created_at"`
 	CreatorName *string    `json:"creator_name,omitempty"`
 }

@@ -7,6 +7,19 @@ versi mengikuti [Semantic Versioning](https://semver.org/lang/id/).
 
 Sumber versi aplikasi: file [`VERSION`](VERSION) (ditampilkan di sidebar desktop dan header mobile).
 
+## [1.0.2] — 2026-08-19
+
+### Ditambahkan
+
+- **Susun ulang transaksi** di dashboard (seret di desktop, panah di ponsel) untuk mengoreksi urutan di tanggal yang sama
+- **Pencarian** di tabel dashboard (deskripsi, keterangan, total, tanggal, jenis, sumber)
+- Opsi **per halaman** 20 / 50 / 100 / 200 pada pagination dashboard
+
+### Diperbaiki
+
+- Ikon dropdown “Semua jenis” menimpa teks
+- Tombol Terapkan tanpa warna latar yang jelas
+
 ## [1.0.1] — 2026-08-18
 
 ### Ditambahkan

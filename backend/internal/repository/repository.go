@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -174,13 +175,16 @@ func (r *Repository) DeleteTeam(ctx context.Context, id uuid.UUID) error {
 func (r *Repository) CreateTransaction(ctx context.Context, teamID uuid.UUID, input models.CreateTransactionInput) (*models.Transaction, error) {
 	var tx models.Transaction
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO transactions (team_id, created_by, hari, tanggal, jenis, deskripsi, total, nota_key, keterangan, source)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-		RETURNING id, team_id, created_by, hari, tanggal, jenis, deskripsi, total, nota_key, keterangan, source, created_at`,
+		INSERT INTO transactions (team_id, created_by, hari, tanggal, jenis, deskripsi, total, nota_key, keterangan, source, sort_order)
+		VALUES (
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+			COALESCE((SELECT MAX(sort_order) FROM transactions WHERE team_id = $1 AND tanggal = $4), -1) + 1
+		)
+		RETURNING id, team_id, created_by, hari, tanggal, jenis, deskripsi, total, nota_key, keterangan, source, sort_order, created_at`,
 		teamID, input.CreatedBy, input.Hari, input.Tanggal, input.Jenis, input.Deskripsi,
 		input.Total, input.NotaKey, input.Keterangan, input.Source,
 	).Scan(&tx.ID, &tx.TeamID, &tx.CreatedBy, &tx.Hari, &tx.Tanggal, &tx.Jenis,
-		&tx.Deskripsi, &tx.Total, &tx.NotaKey, &tx.Keterangan, &tx.Source, &tx.CreatedAt)
+		&tx.Deskripsi, &tx.Total, &tx.NotaKey, &tx.Keterangan, &tx.Source, &tx.SortOrder, &tx.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +197,7 @@ type TxFilter struct {
 	Jenis    *models.TxJenis
 	DateFrom *time.Time
 	DateTo   *time.Time
+	Search   string
 	Limit    int
 	Offset   int
 }
@@ -216,7 +221,38 @@ func txFilterWhere(f TxFilter) (string, []any, int) {
 		args = append(args, *f.DateTo)
 		idx++
 	}
+	if q := sanitizeTxSearch(f.Search); q != "" {
+		pattern := "%" + q + "%"
+		where = append(where, fmt.Sprintf(`(
+			t.deskripsi ILIKE $%d OR
+			COALESCE(t.keterangan, '') ILIKE $%d OR
+			t.hari ILIKE $%d OR
+			CAST(t.total AS TEXT) ILIKE $%d OR
+			TO_CHAR(t.tanggal, 'YYYY-MM-DD') ILIKE $%d OR
+			TO_CHAR(t.tanggal, 'DD-MM-YYYY') ILIKE $%d OR
+			TO_CHAR(t.tanggal, 'DD/MM/YYYY') ILIKE $%d OR
+			TO_CHAR(t.tanggal, 'DDMMYY') ILIKE $%d OR
+			CASE t.jenis WHEN 'in' THEN 'pemasukan masuk in' ELSE 'pengeluaran keluar out' END ILIKE $%d OR
+			CASE t.source WHEN 'wa' THEN 'whatsapp wa' WHEN 'tele' THEN 'telegram tele' ELSE 'web' END ILIKE $%d
+		)`, idx, idx, idx, idx, idx, idx, idx, idx, idx, idx))
+		args = append(args, pattern)
+		idx++
+	}
 	return strings.Join(where, " AND "), args, idx
+}
+
+func sanitizeTxSearch(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return ""
+	}
+	if len(q) > 80 {
+		q = q[:80]
+	}
+	q = strings.ReplaceAll(q, `\`, "")
+	q = strings.ReplaceAll(q, "%", "")
+	q = strings.ReplaceAll(q, "_", "")
+	return strings.TrimSpace(q)
 }
 
 func (r *Repository) CountTransactions(ctx context.Context, f TxFilter) (int, error) {
@@ -234,11 +270,11 @@ func (r *Repository) ListTransactions(ctx context.Context, f TxFilter) ([]models
 	args = append(args, f.Limit, f.Offset)
 	query := fmt.Sprintf(`
 		SELECT t.id, t.team_id, t.created_by, t.hari, t.tanggal, t.jenis, t.deskripsi,
-		       t.total, t.nota_key, t.keterangan, t.source, t.created_at, u.name
+		       t.total, t.nota_key, t.keterangan, t.source, t.sort_order, t.created_at, u.name
 		FROM transactions t
 		LEFT JOIN users u ON u.id = t.created_by
 		WHERE %s
-		ORDER BY t.tanggal DESC, t.created_at DESC
+		ORDER BY t.tanggal DESC, t.sort_order ASC, t.created_at ASC
 		LIMIT $%d OFFSET $%d`, where, idx, idx+1)
 
 	rows, err := r.pool.Query(ctx, query, args...)
@@ -251,7 +287,7 @@ func (r *Repository) ListTransactions(ctx context.Context, f TxFilter) ([]models
 		var tx models.Transaction
 		if err := rows.Scan(&tx.ID, &tx.TeamID, &tx.CreatedBy, &tx.Hari, &tx.Tanggal,
 			&tx.Jenis, &tx.Deskripsi, &tx.Total, &tx.NotaKey, &tx.Keterangan,
-			&tx.Source, &tx.CreatedAt, &tx.CreatorName); err != nil {
+			&tx.Source, &tx.SortOrder, &tx.CreatedAt, &tx.CreatorName); err != nil {
 			return nil, err
 		}
 		tx.HydrateNota()
@@ -264,14 +300,14 @@ func (r *Repository) GetTransaction(ctx context.Context, teamID, txID uuid.UUID)
 	var tx models.Transaction
 	err := r.pool.QueryRow(ctx, `
 		SELECT t.id, t.team_id, t.created_by, t.hari, t.tanggal, t.jenis, t.deskripsi,
-		       t.total, t.nota_key, t.keterangan, t.source, t.created_at, u.name
+		       t.total, t.nota_key, t.keterangan, t.source, t.sort_order, t.created_at, u.name
 		FROM transactions t
 		LEFT JOIN users u ON u.id = t.created_by
 		WHERE t.id = $1 AND t.team_id = $2`,
 		txID, teamID,
 	).Scan(&tx.ID, &tx.TeamID, &tx.CreatedBy, &tx.Hari, &tx.Tanggal,
 		&tx.Jenis, &tx.Deskripsi, &tx.Total, &tx.NotaKey, &tx.Keterangan,
-		&tx.Source, &tx.CreatedAt, &tx.CreatorName)
+		&tx.Source, &tx.SortOrder, &tx.CreatedAt, &tx.CreatorName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -286,14 +322,23 @@ func (r *Repository) UpdateTransaction(ctx context.Context, teamID, txID uuid.UU
 	var tx models.Transaction
 	err := r.pool.QueryRow(ctx, `
 		UPDATE transactions
-		SET hari=$1, tanggal=$2, jenis=$3, deskripsi=$4, total=$5, nota_key=$6, keterangan=$7
+		SET hari=$1, tanggal=$2, jenis=$3, deskripsi=$4, total=$5, nota_key=$6, keterangan=$7,
+		    sort_order = CASE
+		        WHEN tanggal IS DISTINCT FROM $2::date THEN (
+		            COALESCE((
+		                SELECT MAX(s.sort_order) FROM transactions s
+		                WHERE s.team_id = $9 AND s.tanggal = $2::date AND s.id <> $8
+		            ), -1) + 1
+		        )
+		        ELSE sort_order
+		    END
 		WHERE id=$8 AND team_id=$9
-		RETURNING id, team_id, created_by, hari, tanggal, jenis, deskripsi, total, nota_key, keterangan, source, created_at`,
+		RETURNING id, team_id, created_by, hari, tanggal, jenis, deskripsi, total, nota_key, keterangan, source, sort_order, created_at`,
 		input.Hari, input.Tanggal, input.Jenis, input.Deskripsi, input.Total, input.NotaKey, input.Keterangan,
 		txID, teamID,
 	).Scan(&tx.ID, &tx.TeamID, &tx.CreatedBy, &tx.Hari, &tx.Tanggal,
 		&tx.Jenis, &tx.Deskripsi, &tx.Total, &tx.NotaKey, &tx.Keterangan,
-		&tx.Source, &tx.CreatedAt)
+		&tx.Source, &tx.SortOrder, &tx.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -313,6 +358,86 @@ func (r *Repository) DeleteTransaction(ctx context.Context, teamID, txID uuid.UU
 		return ErrNotFound
 	}
 	return nil
+}
+
+type txOrderRow struct {
+	ID        uuid.UUID
+	Tanggal   time.Time
+	SortOrder int
+}
+
+func (r *Repository) ReorderTransactions(ctx context.Context, teamID uuid.UUID, ids []uuid.UUID) error {
+	if len(ids) < 2 {
+		return nil
+	}
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	uniq := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	if len(uniq) < 2 {
+		return nil
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+		SELECT id, tanggal, sort_order
+		FROM transactions
+		WHERE team_id = $1 AND id = ANY($2)`, teamID, uniq)
+	if err != nil {
+		return err
+	}
+	byID := make(map[uuid.UUID]txOrderRow, len(uniq))
+	for rows.Next() {
+		var row txOrderRow
+		if err := rows.Scan(&row.ID, &row.Tanggal, &row.SortOrder); err != nil {
+			rows.Close()
+			return err
+		}
+		byID[row.ID] = row
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(byID) != len(uniq) {
+		return ErrNotFound
+	}
+
+	groups := make(map[string][]txOrderRow)
+	for _, id := range uniq {
+		row := byID[id]
+		key := row.Tanggal.Format("2006-01-02")
+		groups[key] = append(groups[key], row)
+	}
+
+	for _, group := range groups {
+		if len(group) < 2 {
+			continue
+		}
+		orders := make([]int, len(group))
+		for i, row := range group {
+			orders[i] = row.SortOrder
+		}
+		sort.Ints(orders)
+		for i, row := range group {
+			if _, err := tx.Exec(ctx, `UPDATE transactions SET sort_order = $1 WHERE id = $2 AND team_id = $3`,
+				orders[i], row.ID, teamID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 type ImportTxKey struct {

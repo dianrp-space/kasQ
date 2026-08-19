@@ -2,25 +2,38 @@
 	import type { Transaction } from '$lib/types';
 	import { formatDate, formatRupiah, jenisLabel, sourceLabel, txNotaKeys } from '$lib/utils';
 	import { Badge, Button, Checkbox } from 'flowbite-svelte';
-	import { EditOutline, EyeOutline, TrashBinOutline } from 'flowbite-svelte-icons';
+	import {
+		ArrowDownOutline,
+		ArrowUpOutline,
+		BarsOutline,
+		EditOutline,
+		EyeOutline,
+		TrashBinOutline
+	} from 'flowbite-svelte-icons';
 	import TxDetailModal from '$lib/components/TxDetailModal.svelte';
 
 	let {
 		transactions,
 		selectable = false,
+		sortable = false,
+		emptyMessage = 'Belum ada transaksi',
 		selectedIds = $bindable<string[]>([]),
 		onViewNota,
 		onDownloadNota,
 		onEdit,
-		onDelete
+		onDelete,
+		onReorder
 	}: {
 		transactions: Transaction[];
 		selectable?: boolean;
+		sortable?: boolean;
+		emptyMessage?: string;
 		selectedIds?: string[];
 		onViewNota?: (keys: string[]) => void;
 		onDownloadNota?: (key: string) => void;
 		onEdit?: (tx: Transaction) => void;
 		onDelete?: (tx: Transaction) => void;
+		onReorder?: (ids: string[]) => void;
 	} = $props();
 
 	const showActions = $derived(!!onEdit || !!onDelete);
@@ -30,6 +43,82 @@
 
 	let detailOpen = $state(false);
 	let detailTx = $state<Transaction | null>(null);
+	let localRows = $state<Transaction[]>([]);
+	let dragId = $state<string | null>(null);
+
+	$effect(() => {
+		localRows = [...transactions];
+	});
+
+	function txDate(tx: Transaction) {
+		return tx.tanggal.slice(0, 10);
+	}
+
+	function sameDateIds(rows: Transaction[], date: string) {
+		return rows.filter((tx) => txDate(tx) === date).map((tx) => tx.id);
+	}
+
+	function canMove(tx: Transaction, dir: -1 | 1) {
+		const i = localRows.findIndex((row) => row.id === tx.id);
+		const j = i + dir;
+		if (i < 0 || j < 0 || j >= localRows.length) return false;
+		return txDate(localRows[j]) === txDate(tx);
+	}
+
+	function emitReorder(rows: Transaction[], date: string) {
+		const ids = sameDateIds(rows, date);
+		if (ids.length > 1) onReorder?.(ids);
+	}
+
+	function move(tx: Transaction, dir: -1 | 1) {
+		if (!sortable || !canMove(tx, dir)) return;
+		const i = localRows.findIndex((row) => row.id === tx.id);
+		const next = [...localRows];
+		[next[i], next[i + dir]] = [next[i + dir], next[i]];
+		localRows = next;
+		emitReorder(next, txDate(tx));
+	}
+
+	function onDragStart(e: DragEvent, tx: Transaction) {
+		if (!sortable) return;
+		dragId = tx.id;
+		e.dataTransfer?.setData('text/plain', tx.id);
+		if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+	}
+
+	function onDragOver(e: DragEvent, tx: Transaction) {
+		if (!sortable || !dragId) return;
+		const from = localRows.find((row) => row.id === dragId);
+		if (!from || txDate(from) !== txDate(tx)) return;
+		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+	}
+
+	function onDrop(e: DragEvent, tx: Transaction) {
+		e.preventDefault();
+		if (!sortable || !dragId) return;
+		const fromIdx = localRows.findIndex((row) => row.id === dragId);
+		const toIdx = localRows.findIndex((row) => row.id === tx.id);
+		const from = localRows[fromIdx];
+		if (!from || fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) {
+			dragId = null;
+			return;
+		}
+		if (txDate(from) !== txDate(tx)) {
+			dragId = null;
+			return;
+		}
+		const next = [...localRows];
+		const [item] = next.splice(fromIdx, 1);
+		next.splice(toIdx, 0, item);
+		localRows = next;
+		dragId = null;
+		emitReorder(next, txDate(from));
+	}
+
+	function onDragEnd() {
+		dragId = null;
+	}
 
 	function showDetail(tx: Transaction) {
 		detailTx = tx;
@@ -52,7 +141,7 @@
 		if (allSelected) {
 			selectedIds = [];
 		} else {
-			selectedIds = transactions.map((tx) => tx.id);
+			selectedIds = localRows.map((tx) => tx.id);
 		}
 	}
 
@@ -63,11 +152,11 @@
 	}
 </script>
 
-{#if transactions.length === 0}
-	<p class="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Belum ada transaksi</p>
+{#if localRows.length === 0}
+	<p class="py-8 text-center text-sm text-slate-400 dark:text-slate-500">{emptyMessage}</p>
 {:else}
 	<div class="space-y-3 md:hidden">
-		{#each transactions as tx}
+		{#each localRows as tx (tx.id)}
 			<article class="rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/80">
 				<div class="mb-2 flex items-start justify-between gap-2">
 					<div class="flex min-w-0 items-start gap-2">
@@ -77,6 +166,28 @@
 								onchange={() => toggleOne(tx.id)}
 								class="mt-0.5 shrink-0"
 							/>
+						{/if}
+						{#if sortable}
+							<div class="mt-0.5 flex shrink-0 flex-col">
+								<button
+									type="button"
+									class="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+									disabled={!canMove(tx, -1)}
+									aria-label="Naikkan urutan"
+									onclick={() => move(tx, -1)}
+								>
+									<ArrowUpOutline class="h-4 w-4" />
+								</button>
+								<button
+									type="button"
+									class="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+									disabled={!canMove(tx, 1)}
+									aria-label="Turunkan urutan"
+									onclick={() => move(tx, 1)}
+								>
+									<ArrowDownOutline class="h-4 w-4" />
+								</button>
+							</div>
 						{/if}
 						<div class="min-w-0">
 							<button type="button" class={detailBtnClass('block w-full font-medium text-slate-900 dark:text-slate-100')} onclick={() => showDetail(tx)}>
@@ -128,6 +239,9 @@
 		<table class="w-full text-left text-sm">
 			<thead class="border-b border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400">
 				<tr>
+					{#if sortable}
+						<th class="w-10 px-3 py-2" title="Seret untuk urutkan transaksi di tanggal yang sama"></th>
+					{/if}
 					{#if selectable}
 						<th class="w-10 px-3 py-2">
 							<Checkbox checked={allSelected} onchange={toggleAll} />
@@ -149,8 +263,27 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each transactions as tx}
-					<tr class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60">
+				{#each localRows as tx (tx.id)}
+					<tr
+						class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60 {dragId === tx.id ? 'opacity-50' : ''}"
+						ondragover={(e) => onDragOver(e, tx)}
+						ondrop={(e) => onDrop(e, tx)}
+					>
+						{#if sortable}
+							<td class="px-1 py-2">
+								<button
+									type="button"
+									class="cursor-grab rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing dark:hover:bg-slate-700 dark:hover:text-slate-200"
+									draggable="true"
+									aria-label="Geser urutan"
+									title="Seret untuk ubah urutan di tanggal yang sama"
+									ondragstart={(e) => onDragStart(e, tx)}
+									ondragend={onDragEnd}
+								>
+									<BarsOutline class="h-4 w-4" />
+								</button>
+							</td>
+						{/if}
 						{#if selectable}
 							<td class="px-3 py-2">
 								<Checkbox
