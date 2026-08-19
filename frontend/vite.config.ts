@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -16,6 +16,31 @@ function readAppVersion(): string {
 	}
 }
 
+function changelogPlugin(): Plugin {
+	const virtualId = 'virtual:changelog';
+	const resolvedId = '\0' + virtualId;
+	const changelogPath = join(rootDir, 'CHANGELOG.md');
+	return {
+		name: 'kasq-changelog',
+		resolveId(id) {
+			if (id === virtualId) return resolvedId;
+		},
+		load(id) {
+			if (id !== resolvedId) return;
+			const raw = readFileSync(changelogPath, 'utf8');
+			return `export default ${JSON.stringify(raw)};`;
+		},
+		handleHotUpdate({ file, server }) {
+			if (file !== changelogPath) return;
+			const mod = server.moduleGraph.getModuleById(resolvedId);
+			if (mod) {
+				server.moduleGraph.invalidateModule(mod);
+				server.ws.send({ type: 'full-reload' });
+			}
+		}
+	};
+}
+
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
 	const backendPort = env.BACKEND_PORT || env.PORT || '8084';
@@ -23,7 +48,7 @@ export default defineConfig(({ mode }) => {
 	const appVersion = env.PUBLIC_APP_VERSION || readAppVersion();
 
 	return {
-		plugins: [tailwindcss(), sveltekit({ adapter: adapter() })],
+		plugins: [changelogPlugin(), tailwindcss(), sveltekit({ adapter: adapter() })],
 		define: {
 			'import.meta.env.PUBLIC_APP_VERSION': JSON.stringify(appVersion)
 		},

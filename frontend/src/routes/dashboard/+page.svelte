@@ -12,7 +12,7 @@
 	import { formatMonthLabel, getMonthRange, greetingWithName, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
 	import { goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
-	import { Button, Card, Heading, Input, Label, Select } from 'flowbite-svelte';
+	import { Button, Input, Label, Select } from 'flowbite-svelte';
 	import MonthPeriodFilter from '$lib/components/MonthPeriodFilter.svelte';
 	import { browser } from '$app/environment';
 	import { SearchOutline } from 'flowbite-svelte-icons';
@@ -37,7 +37,7 @@
 	let currentPage = $state(1);
 	let pageSize = $state(20);
 	let pageSizeValue = $state('20');
-	let filterJenis = $state('');
+	let filterJenis = $state<'' | 'in' | 'out'>('');
 	let filterMonth = $state(toInputMonth());
 	let searchInput = $state('');
 	let searchQuery = $state('');
@@ -123,6 +123,12 @@
 		selectedIds = [];
 		searchQuery = searchInput.trim();
 		loadTeamData();
+	}
+
+	function setFilterJenis(value: '' | 'in' | 'out') {
+		if (filterJenis === value) return;
+		filterJenis = value;
+		applyFilter();
 	}
 
 	function onSearchInput() {
@@ -278,9 +284,9 @@
 
 <svelte:head><title>{pageTitle} — KasQ</title></svelte:head>
 
-<div class="mb-3 sm:mb-4">
-	<Heading tag="h1" class="text-xl sm:text-2xl">{pageTitle}</Heading>
-	<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Dashboard</p>
+<div class="page-head">
+	<h1>{pageTitle}</h1>
+	<p>Ringkasan kas {periodLabel}</p>
 </div>
 
 {#if needsTeam}
@@ -293,28 +299,41 @@
 		<DashboardChart {balance} transactions={chartTransactions} />
 	{/if}
 
-	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
-		<div class="mb-3 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
-			<div class="md:flex-1">
-				<Heading tag="h2" class="text-base sm:text-lg">Transaksi</Heading>
-				<p class="text-xs text-slate-500">
-					Periode: {periodLabel}
-					{#if txTotal > 0}
-						· {txTotal} transaksi
-					{/if}
-				</p>
-			</div>
-			<div class="grid grid-cols-2 gap-2 md:contents">
-				<div class="col-span-2 md:max-w-[180px]">
-					<MonthPeriodFilter bind:value={filterMonth} />
+	<section class="app-panel !p-4 sm:!p-5">
+		<div class="mb-4 flex flex-col gap-3">
+			<div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+				<div>
+					<h2 class="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-lg">Transaksi</h2>
+					<p class="text-xs text-slate-500 dark:text-slate-400">
+						{periodLabel}
+						{#if txTotal > 0}
+							· {txTotal} transaksi
+						{/if}
+					</p>
 				</div>
-				<div class="col-span-2 md:min-w-[11.5rem] md:max-w-[13rem]">
-					<Label for="filter-jenis" class="mb-1 block text-xs text-slate-500 dark:text-slate-400">Jenis</Label>
-					<Select id="filter-jenis" bind:value={filterJenis} placeholder="" class="w-full">
-						<option value="">Semua jenis</option>
-						<option value="in">Pemasukan</option>
-						<option value="out">Pengeluaran</option>
-					</Select>
+				{#if selectedIds.length > 0}
+					<Button color="red" outline size="sm" onclick={batchDelete}>
+						Hapus ({selectedIds.length})
+					</Button>
+				{/if}
+			</div>
+			<div class="grid grid-cols-2 items-end gap-2 md:flex md:flex-wrap">
+				<div class="col-span-2 md:w-[11.5rem]">
+					<MonthPeriodFilter bind:value={filterMonth} onchange={applyFilter} />
+				</div>
+				<div class="col-span-2 min-w-0 md:min-w-[20rem] md:flex-1">
+					<p class="mb-1 text-xs text-slate-500 dark:text-slate-400" id="dash-jenis-label">Jenis</p>
+					<div class="app-seg app-seg-jenis" role="group" aria-labelledby="dash-jenis-label">
+						<button type="button" aria-pressed={filterJenis === ''} onclick={() => setFilterJenis('')}>
+							Semua
+						</button>
+						<button type="button" data-tone="in" aria-pressed={filterJenis === 'in'} onclick={() => setFilterJenis('in')}>
+							Pemasukan
+						</button>
+						<button type="button" data-tone="out" aria-pressed={filterJenis === 'out'} onclick={() => setFilterJenis('out')}>
+							Pengeluaran
+						</button>
+					</div>
 				</div>
 				<div class="col-span-2 md:min-w-[14rem] md:max-w-xs md:flex-1">
 					<Label for="filter-search" class="mb-1 block text-xs text-slate-500 dark:text-slate-400">Cari</Label>
@@ -329,17 +348,9 @@
 						/>
 					</div>
 				</div>
-				<Button color="primary" class="col-span-2 bg-primary-600 text-white hover:bg-primary-700 md:col-span-1" onclick={applyFilter}>
-					Terapkan
-				</Button>
-				{#if selectedIds.length > 0}
-					<Button color="red" outline class="col-span-2 md:col-span-1" onclick={batchDelete}>
-						Hapus ({selectedIds.length})
-					</Button>
-				{/if}
 			</div>
 		</div>
-		<p class="mb-2 text-xs text-slate-500 dark:text-slate-400">
+		<p class="mb-3 text-xs text-slate-500 dark:text-slate-400">
 			Seret ikon garis (desktop) atau panah (ponsel) untuk menyusun ulang transaksi di tanggal yang sama.
 		</p>
 		<TxTable
@@ -381,7 +392,7 @@
 					<Button size="sm" color="light" disabled={currentPage <= 1} onclick={() => goToPage(currentPage - 1)}>
 						Sebelumnya
 					</Button>
-					<span class="min-w-[7rem] text-center text-sm text-slate-600 dark:text-slate-300">
+					<span class="min-w-[7rem] text-center text-sm tabular-nums text-slate-600 dark:text-slate-300">
 						Halaman {currentPage} / {totalPages}
 					</span>
 					<Button
@@ -395,7 +406,7 @@
 				{/if}
 			</div>
 		</div>
-	</Card>
+	</section>
 {/if}
 
 <NotaPreviewModal bind:open={notaPreviewOpen} srcs={notaPreviewSrcs} onDownload={downloadPreviewNota} onDownloadAll={downloadAllPreviewNota} />

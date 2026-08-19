@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { ChartPieOutline, HeartOutline, LinkOutline, PenOutline, UserCircleSolid } from 'flowbite-svelte-icons';
 	import { opsNavLinks, isOpsNavActive } from '$lib/opsNav';
-	import { APP_VERSION } from '$lib/version';
+	import VersionLink from '$lib/components/VersionLink.svelte';
 
 	const icons = {
 		'/dashboard': ChartPieOutline,
@@ -30,5 +30,5 @@
 			</a>
 		{/each}
 	</nav>
-	<p class="px-4 pb-4 pt-2 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">KasQ v{APP_VERSION}</p>
+	<VersionLink prefix="KasQ" class="block px-4 pb-4 pt-2 text-[11px] text-slate-400 dark:text-slate-500" />
 </aside>

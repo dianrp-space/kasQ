@@ -129,6 +129,11 @@
 		return `cursor-pointer text-left hover:text-primary-700 hover:underline dark:hover:text-primary-400 ${extra}`;
 	}
 
+	const iconBtn =
+		'inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100';
+	const iconBtnDanger =
+		'inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300';
+
 	function toggleOne(id: string) {
 		if (selectedIds.includes(id)) {
 			selectedIds = selectedIds.filter((x) => x !== id);
@@ -151,6 +156,21 @@
 		return 'indigo';
 	}
 </script>
+
+{#snippet actionIcons(tx: Transaction)}
+	<div class="flex items-center gap-0.5">
+		{#if onEdit}
+			<button type="button" class={iconBtn} aria-label="Edit" title="Edit" onclick={() => onEdit(tx)}>
+				<EditOutline class="h-4 w-4" />
+			</button>
+		{/if}
+		{#if onDelete}
+			<button type="button" class={iconBtnDanger} aria-label="Hapus" title="Hapus" onclick={() => onDelete(tx)}>
+				<TrashBinOutline class="h-4 w-4" />
+			</button>
+		{/if}
+	</div>
+{/snippet}
 
 {#if localRows.length === 0}
 	<p class="py-8 text-center text-sm text-slate-400 dark:text-slate-500">{emptyMessage}</p>
@@ -196,7 +216,7 @@
 							<p class="text-xs text-slate-500 dark:text-slate-400">{formatDate(tx.tanggal)} · {tx.hari}</p>
 						</div>
 					</div>
-					<p class="shrink-0 text-sm font-semibold {tx.jenis === 'in' ? 'text-emerald-600' : 'text-red-600'}">
+					<p class="shrink-0 text-sm font-semibold tabular-nums {tx.jenis === 'in' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}">
 						{formatRupiah(tx.total)}
 					</p>
 				</div>
@@ -220,15 +240,8 @@
 							{txNotaKeys(tx).length > 1 ? `Nota (${txNotaKeys(tx).length})` : 'Nota'}
 						</Button>
 					{/if}
-					{#if onEdit}
-						<Button size="xs" color="light" onclick={() => onEdit(tx)}>
-							<EditOutline class="me-1 h-3 w-3" /> Edit
-						</Button>
-					{/if}
-					{#if onDelete}
-						<Button size="xs" color="red" outline onclick={() => onDelete(tx)}>
-							<TrashBinOutline class="me-1 h-3 w-3" /> Hapus
-						</Button>
+					{#if onEdit || onDelete}
+						{@render actionIcons(tx)}
 					{/if}
 				</div>
 			</article>
@@ -250,15 +263,15 @@
 					<th class="px-3 py-2">Tanggal</th>
 					<th class="px-3 py-2">Hari</th>
 					<th class="px-3 py-2">Jenis</th>
+					{#if onViewNota}
+						<th class="px-3 py-2">Nota</th>
+					{/if}
 					<th class="px-3 py-2">Deskripsi</th>
 					<th class="px-3 py-2 text-right">Total</th>
 					<th class="px-3 py-2">Sumber</th>
 					<th class="px-3 py-2">Keterangan</th>
-					{#if onViewNota}
-						<th class="px-3 py-2">Nota</th>
-					{/if}
 					{#if showActions}
-						<th class="px-3 py-2">Aksi</th>
+						<th class="w-20 px-3 py-2">Aksi</th>
 					{/if}
 				</tr>
 			</thead>
@@ -297,6 +310,22 @@
 						<td class="px-3 py-2">
 							<Badge color={tx.jenis === 'in' ? 'green' : 'red'}>{jenisLabel(tx.jenis)}</Badge>
 						</td>
+						{#if onViewNota}
+							<td class="px-3 py-2">
+								{#if txNotaKeys(tx).length > 0}
+									<div class="flex gap-1">
+										<Button size="xs" color="light" onclick={() => onViewNota?.(txNotaKeys(tx))}>
+											<EyeOutline class="h-4 w-4" />
+											{#if txNotaKeys(tx).length > 1}
+												<span class="ms-1">{txNotaKeys(tx).length}</span>
+											{/if}
+										</Button>
+									</div>
+								{:else}
+									—
+								{/if}
+							</td>
+						{/if}
 						<td class="max-w-xs px-3 py-2">
 							<button
 								type="button"
@@ -307,7 +336,7 @@
 								{tx.deskripsi}
 							</button>
 						</td>
-						<td class="whitespace-nowrap px-3 py-2 text-right font-medium">
+						<td class="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums {tx.jenis === 'in' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}">
 							{formatRupiah(tx.total)}
 						</td>
 						<td class="px-3 py-2">
@@ -327,32 +356,9 @@
 								—
 							{/if}
 						</td>
-						{#if onViewNota}
-							<td class="px-3 py-2">
-								{#if txNotaKeys(tx).length > 0}
-									<div class="flex gap-1">
-										<Button size="xs" color="light" onclick={() => onViewNota?.(txNotaKeys(tx))}>
-											<EyeOutline class="h-4 w-4" />
-											{#if txNotaKeys(tx).length > 1}
-												<span class="ms-1">{txNotaKeys(tx).length}</span>
-											{/if}
-										</Button>
-									</div>
-								{:else}
-									—
-								{/if}
-							</td>
-						{/if}
 						{#if showActions}
 							<td class="whitespace-nowrap px-3 py-2">
-								<div class="flex gap-1">
-									{#if onEdit}
-										<Button size="xs" color="light" onclick={() => onEdit(tx)}>Edit</Button>
-									{/if}
-									{#if onDelete}
-										<Button size="xs" color="red" outline onclick={() => onDelete(tx)}>Hapus</Button>
-									{/if}
-								</div>
+								{@render actionIcons(tx)}
 							</td>
 						{/if}
 					</tr>

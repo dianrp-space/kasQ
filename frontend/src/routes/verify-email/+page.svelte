@@ -2,7 +2,8 @@
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
 	import { onMount } from 'svelte';
-	import { Alert, Button, Card, Heading, Spinner } from 'flowbite-svelte';
+	import AuthShell from '$lib/components/AuthShell.svelte';
+	import { Alert, Button, Spinner } from 'flowbite-svelte';
 
 	let status = $state<'loading' | 'success' | 'error'>('loading');
 	let message = $state('');
@@ -25,20 +26,26 @@
 	});
 </script>
 
-<div class="auth-shell">
-	<Card class="w-full max-w-md p-6 text-center">
-		<Heading tag="h1" class="mb-4 text-xl text-primary-700">Verifikasi Email</Heading>
-		{#if status === 'loading'}
-			<div class="flex flex-col items-center gap-3">
-				<Spinner />
-				<p class="text-slate-500">Memverifikasi...</p>
-			</div>
-		{:else if status === 'success'}
-			<Alert color="green" class="text-left">{message}</Alert>
-			<Button href="/login" class="mt-4">Login</Button>
-		{:else}
-			<Alert color="red" class="text-left">{message}</Alert>
-			<Button href="/login" color="light" class="mt-4">Kembali ke Login</Button>
-		{/if}
-	</Card>
-</div>
+<svelte:head><title>Verifikasi email — KasQ</title></svelte:head>
+
+<AuthShell
+	title="Verifikasi email"
+	subtitle={status === 'loading' ? 'Memeriksa tautan konfirmasi.' : ''}
+>
+	{#if status === 'loading'}
+		<div class="flex items-center gap-3 py-4 text-slate-500 dark:text-slate-400">
+			<Spinner size="6" />
+			<span>Memverifikasi</span>
+		</div>
+	{:else if status === 'success'}
+		<Alert color="green">{message}</Alert>
+		<Button href="/login" class="auth-submit mt-4">Masuk</Button>
+	{:else}
+		<Alert color="red">{message}</Alert>
+		<Button href="/login" color="light" class="mt-4 w-full">Kembali ke masuk</Button>
+	{/if}
+
+	{#snippet footer()}
+		<a href="/login">Ke halaman masuk</a>
+	{/snippet}
+</AuthShell>

@@ -8,9 +8,10 @@
 	import OpsSidebar from '$lib/components/OpsSidebar.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
+	import AppBrand from '$lib/components/AppBrand.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { appSettings, brandingUrl, loadAppSettings } from '$lib/appSettings.svelte';
-	import { homePath, isOpsOnlyPath } from '$lib/roles';
+	import { isOpsOnlyPath } from '$lib/roles';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { setContext } from 'svelte';
@@ -21,8 +22,8 @@
 
 	const authPaths = ['/login', '/register', '/verify-email', '/forgot-password', '/reset-password'];
 	const isPublic = $derived($page.url.pathname.startsWith('/report/'));
-	const isReportPage = $derived($page.url.pathname.startsWith('/report/'));
 	const isAuthPage = $derived(authPaths.some((p) => $page.url.pathname.startsWith(p)));
+	const isChangelog = $derived($page.url.pathname === '/changelog');
 
 	const faviconHref = $derived(brandingUrl(appSettings.favicon_url) ?? defaultBrandImage);
 	const pageTitle = $derived(`${appSettings.app_name}${appSettings.app_tagline ? ' — ' + appSettings.app_tagline.split('—')[0].trim() : ''}`);
@@ -34,6 +35,18 @@
 	$effect(() => {
 		if (isPublic || isAuthPage) {
 			loading = false;
+			return;
+		}
+		if (isChangelog) {
+			api.me()
+				.then((u) => {
+					user = u;
+					loading = false;
+				})
+				.catch(() => {
+					user = null;
+					loading = false;
+				});
 			return;
 		}
 		api.me()
@@ -54,6 +67,10 @@
 		try {
 			user = await api.me();
 		} catch {
+			if (isChangelog) {
+				user = null;
+				return;
+			}
 			goto('/login');
 		}
 	}
@@ -83,11 +100,6 @@
 	</div>
 {:else if isPublic || isAuthPage}
 	<div class="relative">
-		{#if !isReportPage}
-			<div class="fixed right-3 top-3 z-50 sm:right-4 sm:top-4">
-				<ThemeToggle class="bg-white/90 shadow-sm backdrop-blur dark:bg-slate-800/90" />
-			</div>
-		{/if}
 		{@render children()}
 	</div>
 	<ConfirmDialog />
@@ -108,6 +120,27 @@
 		{#if user.role === 'ops'}
 			<OpsBottomNav />
 		{/if}
+		<ConfirmDialog />
+		<ToastHost />
+	</div>
+{:else if isChangelog}
+	<div class="min-h-screen bg-slate-50 dark:bg-slate-900">
+		<header class="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
+			<div class="mx-auto flex max-w-3xl items-center justify-between gap-3">
+				<a href="/login" class="min-w-0">
+					<AppBrand size="sm" asHeading={false} />
+				</a>
+				<div class="flex items-center gap-3">
+					<a href="/login" class="text-sm font-medium text-slate-500 hover:text-primary-700 dark:text-slate-400 dark:hover:text-primary-400">
+						Masuk
+					</a>
+					<ThemeToggle class="shrink-0 bg-white shadow-sm dark:bg-slate-800" />
+				</div>
+			</div>
+		</header>
+		<main class="mx-auto max-w-3xl px-4 py-6">
+			{@render children()}
+		</main>
 		<ConfirmDialog />
 		<ToastHost />
 	</div>

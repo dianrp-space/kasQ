@@ -2,7 +2,6 @@
 	import { browser } from '$app/environment';
 	import type { ApexOptions } from 'apexcharts';
 	import { Chart } from '@flowbite-svelte-plugins/chart';
-	import { Card, Heading } from 'flowbite-svelte';
 	import type { Balance, Transaction } from '$lib/types';
 	import { formatRupiah } from '$lib/utils';
 
@@ -108,14 +107,14 @@
 </script>
 
 <div class="mb-4 grid gap-3 lg:grid-cols-2 lg:gap-4">
-	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
-		<Heading tag="h3" class="mb-2 text-sm font-semibold sm:text-base">Ringkasan Periode</Heading>
+	<section class="app-panel !p-4 sm:!p-5">
+		<h3 class="mb-2 text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-50">Ringkasan periode</h3>
 		{#key chartTheme.mode}
 			<Chart options={donutOptions} class="dashboard-chart w-full min-h-0" />
 		{/key}
-	</Card>
-	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
-		<Heading tag="h3" class="mb-2 text-sm font-semibold sm:text-base">Transaksi Harian</Heading>
+	</section>
+	<section class="app-panel !p-4 sm:!p-5">
+		<h3 class="mb-2 text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-50">Transaksi harian</h3>
 		{#if dailySeries.labels.length === 0}
 			<p class="py-10 text-center text-sm text-slate-400 dark:text-slate-500">Belum ada data untuk grafik</p>
 		{:else}
@@ -123,5 +122,5 @@
 				<Chart options={barOptions} class="dashboard-chart w-full min-h-0" />
 			{/key}
 		{/if}
-	</Card>
+	</section>
 </div>

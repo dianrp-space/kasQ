@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import { loadAppSettings } from '$lib/appSettings.svelte';
-	import AppBrand from '$lib/components/AppBrand.svelte';
+	import AuthShell from '$lib/components/AuthShell.svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
-	import { Alert, Button, Card, Heading, Input, Label } from 'flowbite-svelte';
+	import { Alert, Button, Input, Label, Spinner } from 'flowbite-svelte';
 	import { CheckCircleSolid } from 'flowbite-svelte-icons';
 
 	let name = $state('');
@@ -14,9 +13,8 @@
 	let success = $state('');
 	let loading = $state(false);
 
-	$effect(() => {
-		loadAppSettings();
-	});
+	const mismatch = $derived(confirmPassword.length > 0 && password !== confirmPassword);
+	const tooShort = $derived(password.length > 0 && password.length < 6);
 
 	async function register(e: Event) {
 		e.preventDefault();
@@ -38,55 +36,61 @@
 	}
 </script>
 
-<div class="auth-shell">
-	<Card class="w-full max-w-md p-6">
-		<div class="mb-6 text-center">
-			<AppBrand size="lg" centered />
-			<p class="mt-2 text-sm text-slate-500">Buat akun ops untuk input transaksi</p>
-		</div>
+<svelte:head><title>Daftar — KasQ</title></svelte:head>
 
-		{#if success}
-			<Alert color="green">
-				{#snippet icon()}
-					<CheckCircleSolid class="h-5 w-5" />
-				{/snippet}
-				<span class="font-medium">{success}</span>
-				<ul class="mt-2 list-inside list-disc space-y-1 text-sm">
-					<li>Cek inbox <strong>{email}</strong></li>
-					<li>Cek folder <strong>Spam / Junk</strong></li>
-					<li>Link konfirmasi berlaku 24 jam</li>
-					<li>Setelah verifikasi, admin akan menetapkan tim/kas sebelum kamu bisa input transaksi</li>
-				</ul>
-				<Button href="/login" class="mt-4 w-full">Ke halaman login</Button>
-			</Alert>
-		{:else}
-			<form onsubmit={register} class="space-y-4">
-				<div>
-					<Label for="name">Nama</Label>
-					<Input id="name" bind:value={name} required minlength={2} />
-				</div>
-				<div>
-					<Label for="email">Email</Label>
-					<Input id="email" type="email" bind:value={email} required />
-				</div>
-				<div>
-					<Label for="password">Password</Label>
-					<PasswordInput id="password" bind:value={password} required minlength={6} autocomplete="new-password" />
-				</div>
-				<div>
-					<Label for="confirm">Konfirmasi Password</Label>
-					<PasswordInput id="confirm" bind:value={confirmPassword} required minlength={6} autocomplete="new-password" />
-				</div>
-				{#if error}<Alert color="red">{error}</Alert>{/if}
-				<Button type="submit" class="w-full" disabled={loading}>
-					{loading ? 'Mendaftar...' : 'Daftar'}
-				</Button>
-			</form>
-		{/if}
+<AuthShell title="Buat akun" subtitle="Akun ops untuk mencatat transaksi. Admin akan menetapkan tim/kas setelah email terverifikasi.">
+	{#if success}
+		<Alert color="green">
+			{#snippet icon()}
+				<CheckCircleSolid class="h-5 w-5" />
+			{/snippet}
+			<span class="font-medium">{success}</span>
+			<ul class="mt-2 list-inside list-disc space-y-1 text-sm">
+				<li>Cek inbox <strong class="break-all">{email}</strong></li>
+				<li>Cek folder spam / junk</li>
+				<li>Tautan konfirmasi berlaku 24 jam</li>
+				<li>Setelah verifikasi, admin menetapkan tim/kas sebelum kamu bisa input transaksi</li>
+			</ul>
+			<Button href="/login" class="auth-submit mt-4">Ke halaman masuk</Button>
+		</Alert>
+	{:else}
+		<form onsubmit={register} class="space-y-4">
+			<div class="auth-field">
+				<Label for="name" class="text-sm font-medium text-slate-700 dark:text-slate-300">Nama</Label>
+				<Input id="name" bind:value={name} required minlength={2} autocomplete="name" placeholder="Nama lengkap" />
+			</div>
+			<div class="auth-field">
+				<Label for="email" class="text-sm font-medium text-slate-700 dark:text-slate-300">Email</Label>
+				<Input id="email" type="email" bind:value={email} required autocomplete="email" placeholder="nama@perusahaan.com" />
+			</div>
+			<div class="auth-field">
+				<Label for="password" class="text-sm font-medium text-slate-700 dark:text-slate-300">Password</Label>
+				<PasswordInput id="password" bind:value={password} required minlength={6} autocomplete="new-password" />
+				{#if tooShort}
+					<p class="auth-hint-error">Minimal 6 karakter</p>
+				{:else}
+					<p class="auth-hint">Minimal 6 karakter</p>
+				{/if}
+			</div>
+			<div class="auth-field">
+				<Label for="confirm" class="text-sm font-medium text-slate-700 dark:text-slate-300">Konfirmasi password</Label>
+				<PasswordInput id="confirm" bind:value={confirmPassword} required minlength={6} autocomplete="new-password" />
+				{#if mismatch}
+					<p class="auth-hint-error">Konfirmasi belum cocok</p>
+				{/if}
+			</div>
+			{#if error}<Alert color="red">{error}</Alert>{/if}
+			<Button type="submit" class="auth-submit" disabled={loading || mismatch}>
+				{#if loading}
+					<Spinner size="4" class="me-2" />
+				{/if}
+				{loading ? 'Mendaftar' : 'Daftar'}
+			</Button>
+		</form>
+	{/if}
 
-		<p class="mt-4 text-center text-sm text-slate-500">
-			Sudah punya akun?
-			<a href="/login" class="font-medium text-primary-600 hover:underline">Masuk</a>
-		</p>
-	</Card>
-</div>
+	{#snippet footer()}
+		Sudah punya akun?
+		<a href="/login">Masuk</a>
+	{/snippet}
+</AuthShell>

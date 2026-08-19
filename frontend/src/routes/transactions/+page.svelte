@@ -6,7 +6,8 @@
 	import { toast } from '$lib/toast.svelte';
 	import { getDayName, HARI_LIST, MAX_NOTA_FILES, toInputDate } from '$lib/utils';
 	import { goto } from '$app/navigation';
-	import { Alert, Button, Card, Heading, Input, Label, Select, Textarea } from 'flowbite-svelte';
+	import { Alert, Button, Input, Label, Select, Spinner, Textarea } from 'flowbite-svelte';
+	import { ImageOutline } from 'flowbite-svelte-icons';
 
 	let user = $state<User | null>(null);
 	let teams = $state<Team[]>([]);
@@ -88,7 +89,7 @@
 			}
 
 			const result = await api.createTransaction(selectedTeam, form);
-			success = `Transaksi berhasil! Saldo terkini: Rp ${result.balance.current_balance.toLocaleString('id-ID')}`;
+			success = `Transaksi disimpan. Saldo terkini: Rp ${result.balance.current_balance.toLocaleString('id-ID')}`;
 			toast.success('Transaksi disimpan');
 			deskripsi = '';
 			total = '';
@@ -119,9 +120,11 @@
 
 <svelte:head><title>Input Transaksi — KasQ</title></svelte:head>
 
-<Heading tag="h1" class="mb-4 text-xl sm:mb-6 sm:text-2xl">Input Transaksi</Heading>
-
-<div class="mb-4 flex flex-wrap gap-2">
+<div class="page-head flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+	<div>
+		<h1>Input transaksi</h1>
+		<p>Catat pemasukan atau pengeluaran, opsional dengan foto nota.</p>
+	</div>
 	<Button color="light" disabled={needsTeam || !selectedTeam} onclick={() => (importOpen = true)}>
 		Import Excel
 	</Button>
@@ -135,11 +138,11 @@
 	</div>
 {/if}
 
-<Card size="lg" shadow="sm" class="max-w-2xl p-3 sm:p-4">
+<section class="app-panel max-w-2xl">
 	<form onsubmit={submit} class="space-y-4">
 		<div class="grid gap-4 sm:grid-cols-2">
-			<div>
-				<Label for="tanggal">Tanggal</Label>
+			<div class="auth-field">
+				<Label for="tanggal" class="text-sm font-medium text-slate-700 dark:text-slate-300">Tanggal</Label>
 				<Input
 					id="tanggal"
 					type="date"
@@ -149,9 +152,9 @@
 					disabled={needsTeam}
 				/>
 			</div>
-			<div>
-				<Label for="hari">Hari</Label>
-				<Select id="hari" bind:value={hari} required disabled={needsTeam}>
+			<div class="auth-field">
+				<Label for="hari" class="text-sm font-medium text-slate-700 dark:text-slate-300">Hari</Label>
+				<Select id="hari" bind:value={hari} required disabled={needsTeam} placeholder="">
 					{#each HARI_LIST as h}
 						<option value={h}>{h}</option>
 					{/each}
@@ -159,16 +162,34 @@
 			</div>
 		</div>
 
-		<div>
-			<Label for="jenis">Jenis</Label>
-			<Select id="jenis" bind:value={jenis} required disabled={needsTeam}>
-				<option value="out">Pengeluaran</option>
-				<option value="in">Pemasukan</option>
-			</Select>
+		<div class="auth-field">
+			<p class="text-sm font-medium text-slate-700 dark:text-slate-300" id="jenis-label">Jenis</p>
+			<div class="app-seg app-seg-jenis" role="group" aria-labelledby="jenis-label">
+				<button
+					type="button"
+					data-tone="out"
+					aria-pressed={jenis === 'out'}
+					disabled={needsTeam}
+					onclick={() => (jenis = 'out')}
+				>
+					Pengeluaran
+					<span class="seg-sub">Uang keluar dari kas</span>
+				</button>
+				<button
+					type="button"
+					data-tone="in"
+					aria-pressed={jenis === 'in'}
+					disabled={needsTeam}
+					onclick={() => (jenis = 'in')}
+				>
+					Pemasukan
+					<span class="seg-sub">Uang masuk ke kas</span>
+				</button>
+			</div>
 		</div>
 
-		<div>
-			<Label for="deskripsi">Deskripsi</Label>
+		<div class="auth-field">
+			<Label for="deskripsi" class="text-sm font-medium text-slate-700 dark:text-slate-300">Deskripsi</Label>
 			<Input
 				id="deskripsi"
 				type="text"
@@ -179,43 +200,49 @@
 			/>
 		</div>
 
-		<div>
-			<Label for="total">Total (Rp)</Label>
+		<div class="auth-field">
+			<Label for="total" class="text-sm font-medium text-slate-700 dark:text-slate-300">Total (Rp)</Label>
 			<Input id="total" type="number" bind:value={total} required min="1" placeholder="12000" disabled={needsTeam} />
 		</div>
 
-		<div>
-			<Label for="nota">Nota (foto, opsional, maks. {MAX_NOTA_FILES})</Label>
-			<input
-				id="nota"
-				type="file"
-				accept="image/*"
-				multiple
-				disabled={needsTeam}
-				class="block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-900 focus:outline-none disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-				onchange={onNotaChange}
-			/>
+		<div class="auth-field">
+			<p class="text-sm font-medium text-slate-700 dark:text-slate-300">Nota</p>
+			<label class="nota-drop {needsTeam ? 'pointer-events-none opacity-50' : ''}" for="nota">
+				<ImageOutline class="h-6 w-6 text-slate-400" />
+				<span class="text-sm font-medium text-slate-700 dark:text-slate-200">Tambah foto nota</span>
+				<span class="text-xs text-slate-500 dark:text-slate-400">Opsional, maks. {MAX_NOTA_FILES} foto</span>
+				<input
+					id="nota"
+					type="file"
+					accept="image/*"
+					multiple
+					disabled={needsTeam}
+					class="sr-only"
+					onchange={onNotaChange}
+				/>
+			</label>
 			{#if notaFiles.length > 0}
 				<div class="mt-2 flex flex-wrap gap-2">
 					{#each notaPreviews as src, i}
 						<div class="relative">
-							<img src={src} alt={notaFiles[i].name} class="h-16 w-16 rounded-md object-cover" />
+							<img src={src} alt={notaFiles[i].name} class="h-16 w-16 rounded-lg object-cover" />
 							<button
 								type="button"
-								class="absolute -right-1 -top-1 rounded-full bg-slate-800 px-1 text-xs text-white"
+								class="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[11px] leading-none text-white dark:bg-slate-200 dark:text-slate-900"
 								onclick={() => removeNotaAt(i)}
+								aria-label="Hapus foto {i + 1}"
 							>
 								×
 							</button>
 						</div>
 					{/each}
 				</div>
-				<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{notaFiles.length} foto dipilih</p>
+				<p class="auth-hint">{notaFiles.length} foto dipilih</p>
 			{/if}
 		</div>
 
-		<div>
-			<Label for="keterangan">Keterangan</Label>
+		<div class="auth-field">
+			<Label for="keterangan" class="text-sm font-medium text-slate-700 dark:text-slate-300">Keterangan</Label>
 			<Textarea id="keterangan" rows={2} bind:value={keterangan} placeholder="Opsional" disabled={needsTeam} />
 		</div>
 
@@ -223,21 +250,24 @@
 		{#if success}<Alert color="green">{success}</Alert>{/if}
 
 		<div class="flex flex-col gap-2 sm:flex-row">
-			<Button type="submit" disabled={loading || needsTeam}>
-				{loading ? 'Menyimpan...' : 'Simpan Transaksi'}
+			<Button type="submit" class="auth-submit" disabled={loading || needsTeam}>
+				{#if loading}
+					<Spinner size="4" class="me-2" />
+				{/if}
+				{loading ? 'Menyimpan' : 'Simpan transaksi'}
 			</Button>
-			<Button href="/dashboard" color="light">Lihat Dashboard</Button>
+			<Button href="/dashboard" color="light">Lihat dashboard</Button>
 		</div>
 	</form>
-</Card>
+</section>
 
-<Card size="lg" shadow="sm" class="mt-4 max-w-2xl p-3 sm:p-4">
-	<Heading tag="h2" class="mb-2 text-base">Format WA/Telegram</Heading>
-	<pre class="overflow-x-auto rounded-lg bg-slate-100 p-3 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">out#Senin#100826#Beli air minum#12000#(Keterangan/opsional)
+<section class="app-panel mt-5 max-w-2xl">
+	<h2 class="mb-2 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Format WA / Telegram</h2>
+	<pre class="app-code">out#Senin#100826#Beli air minum#12000#(Keterangan/opsional)
 out#100826#Beli air minum#12000
 in#Sabtu#010826#Refill kas Batam#2000000</pre>
-	<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+	<p class="mt-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
 		Hari boleh dikosongkan — terisi otomatis dari tanggal. Keterangan opsional. Untuk pengeluaran dengan nota, kirim 1–10 foto. Telegram: caption format transaksi di foto mana pun (boleh album). WhatsApp: kirim beberapa foto berurutan, caption di foto terakhir (atau salah satu foto).
-		Rekap Excel lama? Pakai <strong>Import Excel</strong> — kolom Hari, Tanggal, Jenis, Deskripsi, Total, Link Nota.
+		Rekap Excel lama? Pakai Import Excel — kolom Hari, Tanggal, Jenis, Deskripsi, Total, Link Nota.
 	</p>
-</Card>
+</section>

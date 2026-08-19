@@ -33,7 +33,7 @@
 				<P class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
 					Total
 				</P>
-				<p class="text-lg font-semibold {tx.jenis === 'in' ? 'text-emerald-600' : 'text-red-600'}">
+				<p class="text-lg font-semibold tabular-nums {tx.jenis === 'in' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}">
 					{formatRupiah(tx.total)}
 				</p>
 			</div>

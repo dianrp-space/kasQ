@@ -4,7 +4,7 @@
 	import { confirm } from '$lib/confirm.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { goto } from '$app/navigation';
-	import { Alert, Badge, Button, Card, Heading, Input, Label, Textarea } from 'flowbite-svelte';
+	import { Alert, Badge, Button, Input, Label, Textarea } from 'flowbite-svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
 
 	let user = $state<User | null>(null);
@@ -355,7 +355,8 @@
 	function copyLink() {
 		if (reportPreviewUrl) {
 			navigator.clipboard.writeText(reportPreviewUrl);
-			success = 'Link disalin!';
+			success = 'Link disalin';
+			toast.success('Link laporan disalin');
 		}
 	}
 
@@ -374,25 +375,29 @@
 
 <svelte:head><title>Integrasi — KasQ</title></svelte:head>
 
-<Heading tag="h1" class="mb-4 text-xl sm:mb-6 sm:text-2xl">Integrasi</Heading>
+<div class="page-head">
+	<h1>Integrasi</h1>
+	<p>Hubungkan WhatsApp, Telegram, dan tautan laporan publik.</p>
+</div>
 
-{#if error}<Alert color="red" class="mb-3">{error}</Alert>{/if}
-{#if success}<Alert color="green" class="mb-3">{success}</Alert>{/if}
+{#if error}<Alert color="red" class="mb-4">{error}</Alert>{/if}
+{#if success}<Alert color="green" class="mb-4">{success}</Alert>{/if}
 
-<div class="grid gap-6 lg:grid-cols-2">
-	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
-		<div class="mb-4 flex items-center justify-between">
-			<Heading tag="h2" class="text-lg">WhatsApp</Heading>
+<div class="grid gap-5 lg:grid-cols-2">
+	<section class="app-panel">
+		<div class="mb-4 flex items-center justify-between gap-3">
+			<h2 class="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">WhatsApp</h2>
 			<Badge color={integration?.wa_enabled ? 'green' : 'gray'}>
 				{integration?.wa_enabled ? waStatus : 'OFF'}
 			</Badge>
 		</div>
-		<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
-			Hubungkan akun WA untuk menjadi Bot via QR code atau kode pairing. Boleh nomor khusus bot, atau nomor pribadi: chat ke
-			<strong>diri sendiri</strong> (Pesan tersimpan / nomor sendiri), lalu whitelist nomor itu agar chat dari orang lain tidak dibalas.
+		<p class="mb-4 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+			Hubungkan akun WA via QR atau kode pairing. Boleh nomor bot khusus, atau nomor pribadi: chat ke
+			<strong class="font-medium text-slate-700 dark:text-slate-200">diri sendiri</strong>
+			lalu whitelist nomor itu agar chat dari orang lain tidak dibalas.
 		</p>
 		{#if integration?.wa_enabled && waStatus === 'connected' && (waPhone || waName)}
-			<div class="mb-4 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100">
+			<div class="mb-4 flex items-center gap-3 rounded-xl border border-emerald-200/80 bg-emerald-50 px-3 py-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100">
 				{#if waPictureUrl}
 					<img
 						src={waPictureUrl}
@@ -404,110 +409,104 @@
 						{(waName || waPhone || '?').slice(0, 1).toUpperCase()}
 					</div>
 				{/if}
-				<div>
+				<div class="min-w-0">
 					<p class="font-medium">Akun terhubung</p>
 					{#if waName}
-						<p>{waName}</p>
+						<p class="truncate">{waName}</p>
 					{/if}
 					{#if waPhone}
-						<p class="font-mono text-emerald-800">{waPhone}</p>
+						<p class="font-mono text-emerald-800 dark:text-emerald-300">{waPhone}</p>
 					{/if}
 				</div>
 			</div>
 		{/if}
 		{#if integration?.wa_enabled && waStatus !== 'connected'}
-			<div class="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
-				<button
-					type="button"
-					class="flex-1 rounded-md px-3 py-2 text-sm font-medium {waLoginTab === 'qr' ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-400'}"
-					onclick={() => (waLoginTab = 'qr')}
-				>
+			<div class="app-seg mb-4">
+				<button type="button" aria-pressed={waLoginTab === 'qr'} onclick={() => (waLoginTab = 'qr')}>
 					QR Code
 				</button>
-				<button
-					type="button"
-					class="flex-1 rounded-md px-3 py-2 text-sm font-medium {waLoginTab === 'pair' ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-400'}"
-					onclick={() => (waLoginTab = 'pair')}
-				>
-					Kode Pairing
+				<button type="button" aria-pressed={waLoginTab === 'pair'} onclick={() => (waLoginTab = 'pair')}>
+					Kode pairing
 				</button>
 			</div>
 
 			{#if waLoginTab === 'qr'}
 				{#if waStatus === 'awaiting_login' || waStatus === 'disconnected'}
-					<Button color="light" class="mb-3" onclick={beginQRLogin}>Tampilkan QR Code</Button>
+					<Button color="light" class="mb-3" onclick={beginQRLogin}>Tampilkan QR</Button>
 				{/if}
 				{#if waQR && waStatus !== 'connected'}
-					<div class="rounded-lg border bg-white p-4 text-center">
-						<p class="mb-2 text-sm text-slate-500 dark:text-slate-400">Scan di WhatsApp → Perangkat Tertaut → Tautkan perangkat</p>
-						<p class="mb-3 text-xs text-amber-700">
+					<div class="rounded-xl border border-slate-200 bg-white p-4 text-center dark:border-slate-700 dark:bg-slate-900">
+						<p class="mb-2 text-sm text-slate-500 dark:text-slate-400">Scan di WhatsApp → Perangkat tertaut → Tautkan perangkat</p>
+						<p class="mb-3 text-xs text-amber-800 dark:text-amber-200">
 							QR berganti otomatis setiap <strong>{waQrTimeout}</strong> detik (QR pertama ~60 detik).
-							Seluruh sesi pairing berlangsung ~2,5 menit sebelum perlu muat ulang.
+							Sesi pairing ~2,5 menit sebelum perlu muat ulang.
 						</p>
 						{#if waQR.startsWith('data:image')}
 							<img src={waQR} alt="WhatsApp QR" class="mx-auto h-64 w-64" />
 						{:else}
-							<p class="text-sm text-slate-400">Menunggu QR code...</p>
+							<p class="text-sm text-slate-400">Menunggu QR…</p>
 						{/if}
 					</div>
 				{/if}
 			{:else}
 				<div class="space-y-3">
-					<div>
-						<Label for="waPairPhone">Nomor WhatsApp (format internasional)</Label>
+					<div class="auth-field">
+						<Label for="waPairPhone" class="text-sm font-medium text-slate-700 dark:text-slate-300">Nomor WhatsApp</Label>
 						<Input id="waPairPhone" class="font-mono" placeholder="62812xxxxxxx" bind:value={waPairPhone} />
-						<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Tanpa + dan tanpa 0 di depan. Nomor akun WA yang akan menautkan perangkat.</p>
+						<p class="auth-hint">Format internasional, tanpa + dan tanpa 0 di depan.</p>
 					</div>
-					<Button color="light" onclick={beginPairLogin}>Dapatkan Kode</Button>
+					<Button color="light" onclick={beginPairLogin}>Dapatkan kode</Button>
 					{#if waPairCode}
-						<div class="rounded-lg border border-sky-200 bg-sky-50 p-4 text-center">
-							<p class="mb-1 text-sm text-slate-600">Masukkan kode di HP:</p>
-							<p class="text-2xl font-bold tracking-widest text-sky-900">{waPairCode}</p>
+						<div class="rounded-xl border border-sky-200 bg-sky-50 p-4 text-center dark:border-sky-800 dark:bg-sky-950/40">
+							<p class="mb-1 text-sm text-slate-600 dark:text-slate-300">Masukkan kode di HP</p>
+							<p class="text-2xl font-semibold tracking-[0.2em] text-sky-900 dark:text-sky-100">{waPairCode}</p>
 							<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-								WhatsApp → Perangkat Tertaut → Tautkan perangkat → Tautkan dengan nomor telepon
+								WhatsApp → Perangkat tertaut → Tautkan perangkat → Tautkan dengan nomor telepon
 							</p>
 							{#if waPairExpires > 0}
-								<p class="mt-2 text-xs text-amber-700">Kode kedaluwarsa dalam ~{waPairExpires} detik</p>
+								<p class="mt-2 text-xs text-amber-800 dark:text-amber-200">Kode kedaluwarsa dalam ~{waPairExpires} detik</p>
 							{:else}
-								<p class="mt-2 text-xs text-red-600">Kode kedaluwarsa — klik &quot;Dapatkan Kode&quot; lagi</p>
+								<p class="mt-2 text-xs text-red-600 dark:text-red-400">Kode kedaluwarsa — klik Dapatkan kode lagi</p>
 							{/if}
 						</div>
 					{/if}
 				</div>
 			{/if}
 		{/if}
-		<div class="mb-4 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-			<Heading tag="h3" class="mb-2 text-base">Nomor yang boleh chat</Heading>
-			<p class="mb-3 text-sm text-slate-500 dark:text-slate-400">
-				Kosongkan daftar = semua nomor dibalas. Isi daftar = hanya nomor terdaftar yang dibalas; nomor lain diabaikan tanpa balasan.
-				Kalau bot memakai nomor pribadi, masukkan nomor itu di sini supaya hanya self-chat yang dijawab.
+		<div class="mb-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+			<h3 class="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-50">Nomor yang boleh chat</h3>
+			<p class="mb-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+				Kosongkan daftar = semua nomor dibalas. Isi daftar = hanya nomor terdaftar yang dibalas.
+				Kalau bot memakai nomor pribadi, masukkan nomor itu supaya hanya self-chat yang dijawab.
 			</p>
-			<Label for="waAllowedPhones">Nomor WA (format internasional, satu per baris)</Label>
-			<Textarea
-				id="waAllowedPhones"
-				class="mt-1 font-mono text-sm"
-				rows={4}
-				placeholder={'628111111111\n628222222222'}
-				bind:value={waAllowedPhonesText}
-			/>
-			<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Boleh 62812… atau 0812…. Maks. 50 nomor.</p>
+			<div class="auth-field">
+				<Label for="waAllowedPhones" class="text-sm font-medium text-slate-700 dark:text-slate-300">Nomor WA</Label>
+				<Textarea
+					id="waAllowedPhones"
+					class="mt-1 font-mono text-sm"
+					rows={4}
+					placeholder={'628111111111\n628222222222'}
+					bind:value={waAllowedPhonesText}
+				/>
+				<p class="auth-hint">Satu per baris. Boleh 62812… atau 0812…. Maks. 50 nomor.</p>
+			</div>
 			<Button color="light" class="mt-3" onclick={saveWAAllowedPhones}>Simpan daftar nomor</Button>
 		</div>
-		<div class="mb-4 flex flex-col gap-2 sm:flex-row">
+		<div class="flex flex-col gap-2 sm:flex-row">
 			<Button onclick={() => toggleWA(true)} disabled={waAlreadyOn}>Aktifkan WA</Button>
 			<Button color="light" onclick={() => toggleWA(false)} disabled={!waAlreadyOn}>Nonaktifkan</Button>
 		</div>
-	</Card>
+	</section>
 
-	<Card size="xl" shadow="sm" class="p-3 sm:p-4">
-		<div class="mb-4 flex items-center justify-between">
-			<Heading tag="h2" class="text-lg">Telegram</Heading>
+	<section class="app-panel">
+		<div class="mb-4 flex items-center justify-between gap-3">
+			<h2 class="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Telegram</h2>
 			<Badge color={integration?.tele_enabled ? 'blue' : 'gray'}>
 				{integration?.tele_enabled ? 'ON' : 'OFF'}
 			</Badge>
 		</div>
 		{#if integration?.tele_enabled && (teleBotName || teleBotUsername || telePictureUrl)}
-			<div class="mb-4 flex items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-100">
+			<div class="mb-4 flex items-center gap-3 rounded-xl border border-sky-200/80 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-100">
 				{#if telePictureUrl}
 					<img
 						src={telePictureUrl}
@@ -519,10 +518,10 @@
 						{(teleBotName || teleBotUsername || '?').slice(0, 1).toUpperCase()}
 					</div>
 				{/if}
-				<div>
+				<div class="min-w-0">
 					<p class="font-medium">{integration.tele_use_system_bot ? 'Bot KasQ aktif' : 'Bot sendiri aktif'}</p>
 					{#if teleBotName}
-						<p>{teleBotName}</p>
+						<p class="truncate">{teleBotName}</p>
 					{/if}
 					{#if teleBotUsername}
 						<p class="font-mono text-sky-800 dark:text-sky-300">@{teleBotUsername}</p>
@@ -530,26 +529,20 @@
 				</div>
 			</div>
 		{/if}
-		<div class="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
-			<button
-				type="button"
-				class="flex-1 rounded-md px-3 py-2 text-sm font-medium {teleMode === 'system' ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-400'}"
-				onclick={() => (teleMode = 'system')}
-			>
+		<div class="app-seg app-seg-tele mb-4" role="group" aria-label="Pilih jenis bot Telegram">
+			<button type="button" aria-pressed={teleMode === 'system'} onclick={() => (teleMode = 'system')}>
 				Bot KasQ
+				<span class="seg-sub">Bot resmi aplikasi</span>
 			</button>
-			<button
-				type="button"
-				class="flex-1 rounded-md px-3 py-2 text-sm font-medium {teleMode === 'custom' ? 'bg-white shadow text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-400'}"
-				onclick={() => (teleMode = 'custom')}
-			>
+			<button type="button" aria-pressed={teleMode === 'custom'} onclick={() => (teleMode = 'custom')}>
 				Bot sendiri
+				<span class="seg-sub">Token dari BotFather</span>
 			</button>
 		</div>
 		<div class="space-y-3">
 			{#if teleMode === 'system'}
 				{#if integration?.system_tele_bot_available}
-					<div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/80">
+					<div class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/80">
 						<p class="font-medium text-slate-800 dark:text-slate-100">
 							{integration.system_tele_bot_name || 'Bot KasQ'}
 							{#if integration.system_tele_bot_username}
@@ -573,31 +566,29 @@
 									Buka bot KasQ di Telegram
 								{/if}
 							</li>
-							<li>Kirim <strong>/start</strong> — bot akan membalas Chat ID kamu</li>
+							<li>Kirim <strong>/start</strong> — bot membalas Chat ID</li>
 							<li>Tempel Chat ID di bawah, lalu aktifkan</li>
 						</ol>
 					</div>
-					<div>
-						<Label for="teleChatId">Chat ID (wajib)</Label>
+					<div class="auth-field">
+						<Label for="teleChatId" class="text-sm font-medium text-slate-700 dark:text-slate-300">Chat ID</Label>
 						<Input
 							id="teleChatId"
 							class="font-mono text-sm"
 							placeholder="Contoh: 123456789"
 							bind:value={teleChatId}
 						/>
-						<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-							Hanya chat pribadi dengan bot KasQ. Satu Chat ID hanya untuk satu tim/kas.
-						</p>
+						<p class="auth-hint">Wajib. Hanya chat pribadi dengan bot KasQ. Satu Chat ID untuk satu tim/kas.</p>
 					</div>
 				{:else}
-					<p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-						Bot KasQ belum dikonfigurasi di server. Gunakan tab <strong>Bot sendiri</strong>, atau minta admin mengisi
+					<p class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+						Bot KasQ belum dikonfigurasi di server. Gunakan tab Bot sendiri, atau minta admin mengisi
 						<code class="font-mono">TELEGRAM_BOT_TOKEN</code> di environment.
 					</p>
 				{/if}
 			{:else}
-				<div>
-					<Label for="teleToken">Bot Token</Label>
+				<div class="auth-field">
+					<Label for="teleToken" class="text-sm font-medium text-slate-700 dark:text-slate-300">Bot token</Label>
 					<PasswordInput
 						id="teleToken"
 						placeholder="Token dari @BotFather"
@@ -605,21 +596,19 @@
 						autocomplete="off"
 					/>
 				</div>
-				<div>
-					<Label for="teleChatIdCustom">Chat ID Grup atau Private</Label>
+				<div class="auth-field">
+					<Label for="teleChatIdCustom" class="text-sm font-medium text-slate-700 dark:text-slate-300">Chat ID grup atau pribadi</Label>
 					<Input
 						id="teleChatIdCustom"
 						class="font-mono text-sm"
 						placeholder="Contoh: -1001234567890 (kosongkan = semua chat)"
 						bind:value={teleChatId}
 					/>
-					<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-						Grup Telegram biasanya ID negatif. Jika salah, bot akan membalas Chat ID kamu saat dikirimi pesan.
-					</p>
+					<p class="auth-hint">Grup biasanya ID negatif. Jika salah, bot membalas Chat ID saat dikirimi pesan.</p>
 				</div>
-				<p class="text-xs text-slate-500 dark:text-slate-400">
+				<p class="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
 					Di grup: gunakan <strong>/saldo</strong> (disarankan) atau <strong>!saldo</strong>.
-					Jika <strong>!saldo</strong> tidak jalan, matikan <em>Group Privacy</em> di @BotFather → Bot Settings.
+					Jika <strong>!saldo</strong> tidak jalan, matikan Group Privacy di @BotFather → Bot Settings.
 				</p>
 			{/if}
 			<div class="flex flex-col gap-2 sm:flex-row">
@@ -629,18 +618,18 @@
 				<Button color="light" onclick={() => saveTele(false)} disabled={!teleAlreadyOn}>Nonaktifkan</Button>
 			</div>
 		</div>
-	</Card>
+	</section>
 </div>
 
-<Card size="xl" shadow="sm" class="mt-6 p-3 sm:p-4">
-	<Heading tag="h2" class="mb-2 text-lg">Link Laporan Finance</Heading>
-	<p class="mb-3 text-sm text-slate-500 dark:text-slate-400">
-		Link publik tanpa login untuk admin finance. Atur slug sendiri atau gunakan default slug tim/kas.
+<section class="app-panel mt-5">
+	<h2 class="mb-1 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Link laporan</h2>
+	<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
+		Tautan publik tanpa login. Atur slug sendiri atau pakai default slug tim/kas.
 	</p>
 	{#if integration}
 		<div class="space-y-3">
-			<div>
-				<Label for="reportSlug">Slug URL</Label>
+			<div class="auth-field">
+				<Label for="reportSlug" class="text-sm font-medium text-slate-700 dark:text-slate-300">Slug URL</Label>
 				<div class="flex flex-wrap items-center gap-2">
 					<span class="text-xs text-slate-500 dark:text-slate-400">/report/</span>
 					<Input
@@ -651,8 +640,9 @@
 					/>
 				</div>
 				{#if integration.team_slug}
-					<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-						Default: <button type="button" class="text-emerald-700 underline" onclick={() => (reportSlug = integration?.team_slug ?? '')}>{integration.team_slug}</button>
+					<p class="auth-hint">
+						Default:
+						<button type="button" class="font-medium text-primary-700 underline dark:text-primary-400" onclick={() => (reportSlug = integration?.team_slug ?? '')}>{integration.team_slug}</button>
 						{#if integration.team_name}
 							<span> (dari {integration.team_name})</span>
 						{/if}
@@ -662,22 +652,22 @@
 			{#if integration.report_url || reportPreviewUrl}
 				<div class="flex flex-wrap items-center gap-2">
 					<Input class="flex-1 font-mono text-xs" readonly value={integration.report_url ?? reportPreviewUrl} />
-					<Button color="light" onclick={copyLink}>Copy</Button>
+					<Button color="light" onclick={copyLink}>Salin</Button>
 				</div>
 			{/if}
 			<div class="flex flex-wrap gap-2">
-				<Button onclick={saveReportSlug}>Simpan Slug</Button>
-				<Button color="light" onclick={resetReportSlug}>Reset ke Default</Button>
+				<Button onclick={saveReportSlug}>Simpan slug</Button>
+				<Button color="light" onclick={resetReportSlug}>Reset ke default</Button>
 			</div>
 		</div>
 	{/if}
-</Card>
+</section>
 
-<Card size="xl" shadow="sm" class="mt-6 p-3 sm:p-4">
-	<Heading tag="h2" class="mb-2">Command Bot</Heading>
-	<pre class="rounded-lg bg-slate-100 p-3 text-xs dark:bg-slate-800 dark:text-slate-300">/start (Telegram — minta Chat ID)
+<section class="app-panel mt-5">
+	<h2 class="mb-2 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Command bot</h2>
+	<pre class="app-code">/start (Telegram — minta Chat ID)
 /saldo atau !saldo
 /link atau !link
 out#100826#Deskripsi#12000</pre>
-	<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Hari boleh dikosongkan (otomatis dari tanggal). Bot KasQ: kirim /start untuk mendapat Chat ID.</p>
-</Card>
+	<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">Hari boleh dikosongkan (otomatis dari tanggal). Bot KasQ: kirim /start untuk Chat ID.</p>
+</section>

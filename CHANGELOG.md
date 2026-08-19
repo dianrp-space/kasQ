@@ -5,7 +5,23 @@ Semua perubahan penting KasQ dicatat di sini.
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/),
 versi mengikuti [Semantic Versioning](https://semver.org/lang/id/).
 
-Sumber versi aplikasi: file [`VERSION`](VERSION) (ditampilkan di sidebar desktop dan header mobile).
+Sumber versi aplikasi: file [`VERSION`](VERSION) (ditampilkan di sidebar desktop dan header mobile; klik untuk membuka changelog).
+
+## [1.0.3] — 2026-08-19
+
+### Ditambahkan
+
+- Halaman **Changelog** (`/changelog`) — klik nomor versi di sidebar, header, atau halaman masuk
+- Poles UI halaman masuk, profil, input transaksi, integrasi, support, dan dashboard (panel, tab, dan tombol yang lebih konsisten)
+- Filter dashboard **langsung diterapkan** saat bulan atau jenis dipilih (tanpa tombol Terapkan)
+- Nominal transaksi berwarna: pemasukan hijau, pengeluaran merah
+- Kolom nota di antara jenis dan deskripsi; aksi edit/hapus jadi ikon saja
+
+### Diperbaiki
+
+- Tab jenis/telegram kurang kontras saat tidak dipilih
+- Ikon mata pada field kata sandi (bukan emoji)
+- Crash Tailwind `primary-950` pada zona unggah nota
 
 ## [1.0.2] — 2026-08-19
 

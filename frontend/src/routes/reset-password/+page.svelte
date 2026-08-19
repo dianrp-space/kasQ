@@ -2,8 +2,9 @@
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
 	import { goto } from '$app/navigation';
+	import AuthShell from '$lib/components/AuthShell.svelte';
 	import PasswordInput from '$lib/components/PasswordInput.svelte';
-	import { Alert, Button, Card, Heading, Label } from 'flowbite-svelte';
+	import { Alert, Button, Label, Spinner } from 'flowbite-svelte';
 
 	let password = $state('');
 	let confirmPassword = $state('');
@@ -12,6 +13,8 @@
 	let loading = $state(false);
 
 	const token = $derived($page.url.searchParams.get('token') ?? '');
+	const mismatch = $derived(confirmPassword.length > 0 && password !== confirmPassword);
+	const tooShort = $derived(password.length > 0 && password.length < 6);
 
 	async function submit(e: Event) {
 		e.preventDefault();
@@ -37,36 +40,46 @@
 	}
 </script>
 
-<div class="auth-shell">
-	<Card class="w-full max-w-md p-6">
-		<div class="mb-6 text-center">
-			<Heading tag="h1" class="text-2xl text-primary-700">Reset Password</Heading>
-			<p class="text-sm text-slate-500">Masukkan password baru</p>
-		</div>
+<svelte:head><title>Reset password — KasQ</title></svelte:head>
 
-		{#if !token}
-			<Alert color="red">Link reset tidak valid. Minta link baru dari halaman lupa password.</Alert>
-			<Button href="/forgot-password" color="light" class="mt-4">Lupa Password</Button>
-		{:else if success}
-			<Alert color="green">
-				<p>{success}</p>
-				<p class="mt-1 text-sm">Mengalihkan ke login...</p>
-			</Alert>
-		{:else}
-			<form onsubmit={submit} class="space-y-4">
-				<div>
-					<Label for="password">Password Baru</Label>
-					<PasswordInput id="password" bind:value={password} required minlength={6} autocomplete="new-password" />
-				</div>
-				<div>
-					<Label for="confirm">Konfirmasi Password</Label>
-					<PasswordInput id="confirm" bind:value={confirmPassword} required minlength={6} autocomplete="new-password" />
-				</div>
-				{#if error}<Alert color="red">{error}</Alert>{/if}
-				<Button type="submit" class="w-full" disabled={loading}>
-					{loading ? 'Menyimpan...' : 'Simpan Password'}
-				</Button>
-			</form>
-		{/if}
-	</Card>
-</div>
+<AuthShell title="Password baru" subtitle="Masukkan password baru untuk akun ini.">
+	{#if !token}
+		<Alert color="red">Tautan reset tidak valid. Minta tautan baru dari halaman lupa password.</Alert>
+		<Button href="/forgot-password" class="auth-submit mt-4">Lupa password</Button>
+	{:else if success}
+		<Alert color="green">
+			<p>{success}</p>
+			<p class="mt-1 text-sm">Mengalihkan ke halaman masuk.</p>
+		</Alert>
+	{:else}
+		<form onsubmit={submit} class="space-y-4">
+			<div class="auth-field">
+				<Label for="password" class="text-sm font-medium text-slate-700 dark:text-slate-300">Password baru</Label>
+				<PasswordInput id="password" bind:value={password} required minlength={6} autocomplete="new-password" />
+				{#if tooShort}
+					<p class="auth-hint-error">Minimal 6 karakter</p>
+				{:else}
+					<p class="auth-hint">Minimal 6 karakter</p>
+				{/if}
+			</div>
+			<div class="auth-field">
+				<Label for="confirm" class="text-sm font-medium text-slate-700 dark:text-slate-300">Konfirmasi password</Label>
+				<PasswordInput id="confirm" bind:value={confirmPassword} required minlength={6} autocomplete="new-password" />
+				{#if mismatch}
+					<p class="auth-hint-error">Konfirmasi belum cocok</p>
+				{/if}
+			</div>
+			{#if error}<Alert color="red">{error}</Alert>{/if}
+			<Button type="submit" class="auth-submit" disabled={loading || mismatch}>
+				{#if loading}
+					<Spinner size="4" class="me-2" />
+				{/if}
+				{loading ? 'Menyimpan' : 'Simpan password'}
+			</Button>
+		</form>
+	{/if}
+
+	{#snippet footer()}
+		<a href="/login">Kembali ke masuk</a>
+	{/snippet}
+</AuthShell>

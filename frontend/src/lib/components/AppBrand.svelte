@@ -1,16 +1,17 @@
 <script lang="ts">
 	import defaultBrandImage from '$lib/assets/defaultBrand';
 	import { appSettings, brandingUrl } from '$lib/appSettings.svelte';
-	import { APP_VERSION } from '$lib/version';
 
 	let {
 		size = 'md',
 		centered = false,
-		showVersion = false
+		onDark = false,
+		asHeading = true
 	}: {
 		size?: 'sm' | 'md' | 'lg';
 		centered?: boolean;
-		showVersion?: boolean;
+		onDark?: boolean;
+		asHeading?: boolean;
 	} = $props();
 
 	const logoUrl = $derived(brandingUrl(appSettings.logo_url) ?? defaultBrandImage);
@@ -33,14 +34,13 @@
 	<div class="flex items-center gap-2 sm:gap-3" class:justify-center={centered}>
 		<img src={logoUrl} alt={appSettings.app_name} class="{logoClass} w-auto shrink-0 object-contain" />
 		<div class="min-w-0" class:text-center={centered}>
-			<h1 class="{titleClass} font-bold text-emerald-700 dark:text-emerald-400">{appSettings.app_name}</h1>
-			{#if appSettings.app_tagline}
-				<p class="{taglineClass} line-clamp-2 text-slate-500 dark:text-slate-400">{appSettings.app_tagline}</p>
+			{#if asHeading}
+				<h1 class="{titleClass} font-bold {onDark ? 'text-emerald-50' : 'text-emerald-700 dark:text-emerald-400'}">{appSettings.app_name}</h1>
+			{:else}
+				<p class="{titleClass} font-bold {onDark ? 'text-emerald-50' : 'text-emerald-700 dark:text-emerald-400'}">{appSettings.app_name}</p>
 			{/if}
-			{#if showVersion}
-				<p class="mt-0.5 text-[10px] tabular-nums leading-none text-slate-400 dark:text-slate-500 md:hidden">
-					v{APP_VERSION}
-				</p>
+			{#if appSettings.app_tagline}
+				<p class="{taglineClass} line-clamp-2 {onDark ? 'text-emerald-100/70' : 'text-slate-500 dark:text-slate-400'}">{appSettings.app_tagline}</p>
 			{/if}
 		</div>
 	</div>
