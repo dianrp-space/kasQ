@@ -85,10 +85,17 @@ export interface Integration {
 	team_name?: string;
 }
 
+export interface PublicMember {
+	id: string;
+	name: string;
+	has_avatar?: boolean;
+}
+
 export interface PublicReport {
 	team: Team;
 	balance: Balance;
 	transactions: Transaction[];
+	members?: PublicMember[];
 }
 
 export interface ImportRowError {

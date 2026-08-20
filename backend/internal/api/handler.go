@@ -76,6 +76,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		{
 			public.GET("/report/:token", h.PublicReport)
 			public.GET("/report/:token/export", h.ExportPublicReport)
+			public.GET("/report/:token/avatar/:userId", h.ServePublicMemberAvatar)
 			public.GET("/nota/:token", h.PublicNota)
 			public.GET("/nota/:token/file", h.ServePublicNota)
 			public.GET("/branding/logo", h.ServeBrandingLogo)
@@ -1337,7 +1338,56 @@ func (h *Handler) PublicReport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"team": team, "balance": balance, "transactions": txs})
+	members, err := h.repo.ListTeamMembers(c.Request.Context(), team.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"team": team, "balance": balance, "transactions": txs, "members": publicTeamMembers(members)})
+}
+
+func publicTeamMembers(users []models.User) []gin.H {
+	out := make([]gin.H, 0, len(users))
+	for i := range users {
+		u := &users[i]
+		m := gin.H{"id": u.ID, "name": u.Name}
+		if userHasAvatar(u) {
+			m["has_avatar"] = true
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func (h *Handler) ServePublicMemberAvatar(c *gin.Context) {
+	token := c.Param("token")
+	userID, err := uuid.Parse(c.Param("userId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+	team, _, err := h.repo.GetReportByToken(c.Request.Context(), token)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	user, err := h.repo.GetUserByID(c.Request.Context(), userID)
+	if err != nil || user.TeamID == nil || *user.TeamID != team.ID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if !userHasAvatar(user) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "avatar not available"})
+		return
+	}
+	reader, contentType, err := h.svc.OpenAsset(c.Request.Context(), *user.AvatarFile)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "avatar not available"})
+		return
+	}
+	defer reader.Close()
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.DataFromReader(http.StatusOK, -1, contentType, reader, nil)
 }
 
 func (h *Handler) PublicNota(c *gin.Context) {

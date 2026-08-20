@@ -68,6 +68,17 @@ export function greetingWithName(name: string, date = new Date()): string {
 	return `${timeGreeting(date)}, ${first}`;
 }
 
+export function nameInitials(name: string): string {
+	return (
+		name
+			.split(/\s+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((part) => part[0]?.toUpperCase() ?? '')
+			.join('') || '?'
+	);
+}
+
 export function jenisLabel(j: 'in' | 'out'): string {
 	return j === 'in' ? 'Masuk' : 'Keluar';
 }

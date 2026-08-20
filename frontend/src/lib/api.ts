@@ -318,6 +318,8 @@ export const api = {
 		const qs = params ? '?' + new URLSearchParams(params).toString() : '';
 		return request<import('./types').PublicReport>(`/api/public/report/${token}${qs}`);
 	},
+	getPublicMemberAvatar: (token: string, userId: string) =>
+		`${API_URL}/api/public/report/${token}/avatar/${userId}`,
 	getPublicNotaURL: async (token: string, key: string, download = false) => {
 		const params = new URLSearchParams({ key });
 		if (download) params.set('download', 'true');

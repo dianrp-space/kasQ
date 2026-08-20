@@ -10,7 +10,7 @@
 	import NotaPreviewModal from '$lib/components/NotaPreviewModal.svelte';
 	import BalanceCards from '$lib/components/BalanceCards.svelte';
 	import DashboardChart from '$lib/components/DashboardChart.svelte';
-	import { formatMonthLabel, getMonthRange, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
+	import { formatMonthLabel, getMonthRange, nameInitials, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
 	import { Alert, Button, Card, Heading, Label, Select, Spinner } from 'flowbite-svelte';
 	import MonthPeriodFilter from '$lib/components/MonthPeriodFilter.svelte';
 	import TxExportButtons from '$lib/components/TxExportButtons.svelte';
@@ -130,9 +130,39 @@
 				<AppBrand size="sm" />
 				<div class="flex items-center justify-between gap-3 sm:justify-end">
 					{#if report}
-						<p class="text-sm font-semibold text-primary-700 dark:text-primary-400 sm:text-right">
-							{report.team.name}
-						</p>
+						<div class="flex min-w-0 items-center gap-2.5">
+							{#if report.members && report.members.length > 0}
+								<div class="flex shrink-0 -space-x-2">
+									{#each report.members as member (member.id)}
+										{#if member.has_avatar}
+											<img
+												src={api.getPublicMemberAvatar(token, member.id)}
+												alt={member.name}
+												title={member.name}
+												class="h-8 w-8 rounded-full border-2 border-white object-cover shadow-sm dark:border-slate-900"
+											/>
+										{:else}
+											<div
+												title={member.name}
+												class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-primary-600 text-[11px] font-semibold text-white shadow-sm dark:border-slate-900"
+											>
+												{nameInitials(member.name)}
+											</div>
+										{/if}
+									{/each}
+								</div>
+							{/if}
+							<div class="min-w-0">
+								<p class="truncate text-sm font-semibold text-primary-700 dark:text-primary-400 sm:text-right">
+									{report.team.name}
+								</p>
+								{#if report.members && report.members.length > 0}
+									<p class="truncate text-xs text-slate-500 dark:text-slate-400 sm:text-right">
+										{report.members.map((m) => m.name).join(', ')}
+									</p>
+								{/if}
+							</div>
+						</div>
 					{/if}
 					<ThemeToggle class="shrink-0 bg-white shadow-sm dark:bg-slate-800" />
 				</div>

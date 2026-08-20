@@ -66,6 +66,25 @@ func (r *Repository) ListUsers(ctx context.Context) ([]models.User, error) {
 	return users, rows.Err()
 }
 
+func (r *Repository) ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]models.User, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, team_id, name, email, password_hash, role, email_verified, avatar_file, created_at
+		FROM users WHERE team_id = $1 ORDER BY name ASC`, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var users []models.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, *u)
+	}
+	return users, rows.Err()
+}
+
 func (r *Repository) CreateUser(ctx context.Context, u *models.User) error {
 	return r.pool.QueryRow(ctx, `
 		INSERT INTO users (team_id, name, email, password_hash, role, email_verified)
