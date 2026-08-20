@@ -26,6 +26,43 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 	return res.json();
 }
 
+function filenameFromDisposition(header: string | null, fallback: string) {
+	if (!header) return fallback;
+	const star = /filename\*=UTF-8''([^;]+)/i.exec(header);
+	if (star?.[1]) return decodeURIComponent(star[1]);
+	const quoted = /filename="([^"]+)"/i.exec(header);
+	if (quoted?.[1]) return quoted[1];
+	const plain = /filename=([^;]+)/i.exec(header);
+	return plain?.[1]?.trim() || fallback;
+}
+
+async function saveDownload(res: Response, fallback: string) {
+	const blob = await res.blob();
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = filenameFromDisposition(res.headers.get('Content-Disposition'), fallback);
+	a.click();
+	URL.revokeObjectURL(url);
+}
+
+async function downloadExport(
+	path: string,
+	format: 'xlsx' | 'pdf',
+	params: Record<string, string> | undefined,
+	credentials: boolean
+) {
+	const qs = new URLSearchParams({ ...(params ?? {}), format });
+	const res = await fetch(`${API_URL}${path}?${qs}`, {
+		credentials: credentials ? 'include' : 'same-origin'
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: res.statusText }));
+		throw new ApiError(err.error || 'Gagal export');
+	}
+	await saveDownload(res, `kasq-laporan.${format}`);
+}
+
 export const api = {
 	login: (email: string, password: string) =>
 		request<{ user: import('./types').User; token: string }>('/api/auth/login', {
@@ -200,14 +237,12 @@ export const api = {
 			const err = await res.json().catch(() => ({ error: res.statusText }));
 			throw new ApiError(err.error || 'Gagal unduh template');
 		}
-		const blob = await res.blob();
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = 'kasq-import-template.xlsx';
-		a.click();
-		URL.revokeObjectURL(url);
+		await saveDownload(res, 'kasq-import-template.xlsx');
 	},
+	exportTransactions: (teamId: string, format: 'xlsx' | 'pdf', params?: Record<string, string>) =>
+		downloadExport(`/api/teams/${teamId}/transactions/export`, format, params, true),
+	exportPublicReport: (token: string, format: 'xlsx' | 'pdf', params?: Record<string, string>) =>
+		downloadExport(`/api/public/report/${token}/export`, format, params, false),
 
 	getIntegration: (teamId: string) =>
 		request<import('./types').Integration>(`/api/teams/${teamId}/integrations`),

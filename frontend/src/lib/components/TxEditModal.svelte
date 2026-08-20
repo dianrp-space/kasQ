@@ -95,8 +95,8 @@
 		<div>
 			<Label for="edit-jenis">Jenis</Label>
 			<Select id="edit-jenis" bind:value={jenis} required>
-				<option value="out">Pengeluaran</option>
-				<option value="in">Pemasukan</option>
+				<option value="out">Keluar</option>
+				<option value="in">Masuk</option>
 			</Select>
 		</div>
 

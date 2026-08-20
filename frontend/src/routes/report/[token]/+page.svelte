@@ -13,6 +13,8 @@
 	import { formatMonthLabel, getMonthRange, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
 	import { Alert, Button, Card, Heading, Label, Select, Spinner } from 'flowbite-svelte';
 	import MonthPeriodFilter from '$lib/components/MonthPeriodFilter.svelte';
+	import TxExportButtons from '$lib/components/TxExportButtons.svelte';
+	import { toast } from '$lib/toast.svelte';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 
@@ -23,6 +25,7 @@
 	let notaPreviewOpen = $state(false);
 	let notaPreviewSrcs = $state<string[]>([]);
 	let notaPreviewKeys = $state<string[]>([]);
+	let exportFormat = $state<'xlsx' | 'pdf' | null>(null);
 
 	const token = $derived($page.params.token ?? '');
 	const periodRange = $derived(getMonthRange(filterMonth));
@@ -50,6 +53,24 @@
 			history.replaceState(history.state, '', url);
 		}
 		load();
+	}
+
+	async function exportTx(format: 'xlsx' | 'pdf') {
+		if (!token) return;
+		exportFormat = format;
+		try {
+			const params: Record<string, string> = {
+				date_from: periodRange.from,
+				date_to: periodRange.to
+			};
+			if (filterJenis) params.jenis = filterJenis;
+			await api.exportPublicReport(token, format, params);
+			toast.success(format === 'pdf' ? 'PDF diunduh' : 'Excel diunduh');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Gagal export');
+		} finally {
+			exportFormat = null;
+		}
 	}
 
 	async function viewNota(keys: string[]) {
@@ -123,7 +144,7 @@
 		{#if error}
 			<Alert color="red" class="text-center">{error}</Alert>
 		{:else if report}
-			<BalanceCards balance={report.balance} />
+			<BalanceCards balance={report.balance} {periodLabel} />
 			<DashboardChart balance={report.balance} transactions={report.transactions} />
 
 			<Card size="xl" shadow="sm" class="p-3 sm:p-4">
@@ -132,6 +153,7 @@
 						<Heading tag="h2" class="text-lg">Transaksi</Heading>
 						<p class="text-xs text-slate-500">Periode: {periodLabel}</p>
 					</div>
+					<TxExportButtons busyFormat={exportFormat} onExport={exportTx} />
 					<div class="grid grid-cols-2 gap-2 md:contents">
 						<div class="col-span-2 md:max-w-[180px]">
 							<MonthPeriodFilter bind:value={filterMonth} />
@@ -140,8 +162,8 @@
 							<Label for="filter-jenis" class="mb-1 block text-xs text-slate-500 dark:text-slate-400">Jenis</Label>
 							<Select id="filter-jenis" bind:value={filterJenis} placeholder="" class="w-full">
 								<option value="">Semua jenis</option>
-								<option value="in">Pemasukan</option>
-								<option value="out">Pengeluaran</option>
+								<option value="in">Masuk</option>
+								<option value="out">Keluar</option>
 							</Select>
 						</div>
 						<Button color="primary" class="col-span-2 bg-primary-600 text-white hover:bg-primary-700 md:col-span-1" onclick={applyFilter}>Terapkan</Button>

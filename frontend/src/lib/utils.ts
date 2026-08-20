@@ -69,7 +69,7 @@ export function greetingWithName(name: string, date = new Date()): string {
 }
 
 export function jenisLabel(j: 'in' | 'out'): string {
-	return j === 'in' ? 'Pemasukan' : 'Pengeluaran';
+	return j === 'in' ? 'Masuk' : 'Keluar';
 }
 
 export function sourceLabel(s: 'web' | 'wa' | 'tele'): string {

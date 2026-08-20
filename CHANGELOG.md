@@ -7,6 +7,29 @@ versi mengikuti [Semantic Versioning](https://semver.org/lang/id/).
 
 Sumber versi aplikasi: file [`VERSION`](VERSION) (ditampilkan di sidebar desktop dan header mobile; klik untuk membuka changelog).
 
+## [1.0.4] — 2026-08-20
+
+### Ditambahkan
+
+- **Export Excel dan PDF** di dashboard dan laporan publik (mengikuti filter bulan, jenis, dan pencarian)
+- Ikon sumber transaksi (WhatsApp, Telegram, Web) di dashboard dan laporan publik
+- Nama periode pada kartu saldo, misalnya *Saldo awal periode Agustus 2026*
+- Menu foto profil: lihat atau ubah foto (tanpa lewat menu Profil)
+- Toggle tema, avatar, dan tombol **Logout** di bagian bawah sidebar desktop
+
+### Diubah
+
+- Label jenis: **Masuk** / **Keluar** (sebelumnya Pemasukan / Pengeluaran)
+- Kartu Link laporan dan Command bot di Integrasi bersandingan di desktop
+- Tombol Import Excel tidak terdorong ke tepi layar
+- Placeholder field lebih redup
+- Logout: outline + latar merah; di mobile hanya ikon
+
+### Diperbaiki
+
+- Teks deskripsi/keterangan panjang di PDF tidak lagi terpotong — wrap ke baris berikutnya
+- Animasi baris saat menyusun ulang transaksi di tanggal yang sama
+
 ## [1.0.3] — 2026-08-19
 
 ### Ditambahkan

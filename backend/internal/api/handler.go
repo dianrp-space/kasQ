@@ -75,6 +75,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		public := api.Group("/public")
 		{
 			public.GET("/report/:token", h.PublicReport)
+			public.GET("/report/:token/export", h.ExportPublicReport)
 			public.GET("/nota/:token", h.PublicNota)
 			public.GET("/nota/:token/file", h.ServePublicNota)
 			public.GET("/branding/logo", h.ServeBrandingLogo)
@@ -92,6 +93,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			protected.GET("/teams", h.ListTeams)
 			protected.GET("/teams/:id/balance", h.GetBalance)
 			protected.GET("/teams/:id/transactions", h.ListTransactions)
+			protected.GET("/teams/:id/transactions/export", h.ExportTransactions)
 			protected.POST("/teams/:id/transactions", h.CreateTransaction)
 			protected.POST("/teams/:id/transactions/import", h.ImportTransactions)
 			protected.GET("/teams/:id/transactions/import/template", h.ImportTemplate)

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Transaction } from '$lib/types';
-	import { formatDate, formatRupiah, jenisLabel, sourceLabel } from '$lib/utils';
+	import { formatDate, formatRupiah, jenisLabel } from '$lib/utils';
 	import { Badge, Button, Modal, P } from 'flowbite-svelte';
+	import SourceIcon from '$lib/components/SourceIcon.svelte';
 
 	let {
 		open = $bindable(false),
@@ -10,12 +11,6 @@
 		open: boolean;
 		tx: Transaction | null;
 	} = $props();
-
-	function sourceColor(source: Transaction['source']) {
-		if (source === 'wa') return 'green';
-		if (source === 'tele') return 'blue';
-		return 'indigo';
-	}
 </script>
 
 <Modal bind:open title="Detail Transaksi" size="md" autoclose={false}>
@@ -23,7 +18,7 @@
 		<div class="space-y-4">
 			<div class="flex flex-wrap items-center gap-2">
 				<Badge color={tx.jenis === 'in' ? 'green' : 'red'}>{jenisLabel(tx.jenis)}</Badge>
-				<Badge color={sourceColor(tx.source)}>{sourceLabel(tx.source)}</Badge>
+				<SourceIcon source={tx.source} />
 				<span class="text-sm text-slate-500 dark:text-slate-400">
 					{formatDate(tx.tanggal)} · {tx.hari}
 				</span>

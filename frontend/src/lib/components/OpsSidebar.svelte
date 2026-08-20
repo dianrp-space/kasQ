@@ -1,8 +1,20 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { ChartPieOutline, HeartOutline, LinkOutline, PenOutline, UserCircleSolid } from 'flowbite-svelte-icons';
+	import type { User } from '$lib/types';
+	import {
+		ArrowRightToBracketOutline,
+		ChartPieOutline,
+		HeartOutline,
+		LinkOutline,
+		PenOutline,
+		UserCircleSolid
+	} from 'flowbite-svelte-icons';
 	import { opsNavLinks, isOpsNavActive } from '$lib/opsNav';
 	import VersionLink from '$lib/components/VersionLink.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import UserMenu from '$lib/components/UserMenu.svelte';
+
+	let { user, onLogout }: { user: User; onLogout: () => void } = $props();
 
 	const icons = {
 		'/dashboard': ChartPieOutline,
@@ -30,5 +42,23 @@
 			</a>
 		{/each}
 	</nav>
-	<VersionLink prefix="KasQ" class="block px-4 pb-4 pt-2 text-[11px] text-slate-400 dark:text-slate-500" />
+	<div class="border-t border-slate-200 p-3 dark:border-slate-700">
+		<div class="mb-3 flex items-center gap-2">
+			<UserMenu {user} menuId="sidebar-avatar" placement="top-start" />
+			<div class="min-w-0 flex-1">
+				<p class="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{user.name}</p>
+				<p class="truncate text-[11px] text-slate-400 dark:text-slate-500">{user.email}</p>
+			</div>
+			<ThemeToggle class="shrink-0" />
+		</div>
+		<button
+			type="button"
+			class="btn-logout flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+			onclick={onLogout}
+		>
+			<ArrowRightToBracketOutline class="h-4 w-4 shrink-0" />
+			Logout
+		</button>
+	</div>
+	<VersionLink prefix="KasQ" class="block px-4 pb-4 pt-1 text-[11px] text-slate-400 dark:text-slate-500" />
 </aside>

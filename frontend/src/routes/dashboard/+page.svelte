@@ -9,11 +9,12 @@
 	import DashboardChart from '$lib/components/DashboardChart.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import { toast } from '$lib/toast.svelte';
-	import { formatMonthLabel, getMonthRange, greetingWithName, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
+	import { formatMonthLabel, getMonthRange, greetingWithName, jenisLabel, notaFilenameFromKey, toInputMonth, downloadFilesAsZip } from '$lib/utils';
 	import { goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
 	import { Button, Input, Label, Select } from 'flowbite-svelte';
 	import MonthPeriodFilter from '$lib/components/MonthPeriodFilter.svelte';
+	import TxExportButtons from '$lib/components/TxExportButtons.svelte';
 	import { browser } from '$app/environment';
 	import { SearchOutline } from 'flowbite-svelte-icons';
 
@@ -48,6 +49,7 @@
 	let editOpen = $state(false);
 	let editingTx = $state<Transaction | null>(null);
 	let selectedIds = $state<string[]>([]);
+	let exportFormat = $state<'xlsx' | 'pdf' | null>(null);
 
 	const needsTeam = $derived(user?.role === 'ops' && !user?.team_id);
 	const periodRange = $derived(getMonthRange(filterMonth));
@@ -231,7 +233,7 @@
 	async function deleteTx(tx: Transaction) {
 		const ok = await confirm({
 			title: 'Hapus transaksi?',
-			message: `Hapus "${tx.deskripsi}" (${tx.jenis === 'in' ? 'Pemasukan' : 'Pengeluaran'})? Tindakan ini tidak bisa dibatalkan.`,
+			message: `Hapus "${tx.deskripsi}" (${jenisLabel(tx.jenis)})? Tindakan ini tidak bisa dibatalkan.`,
 			confirmLabel: 'Hapus',
 			color: 'red'
 		});
@@ -273,6 +275,21 @@
 		balance = await api.getBalance(selectedTeam, balanceParams);
 	}
 
+	async function exportTx(format: 'xlsx' | 'pdf') {
+		if (!selectedTeam || needsTeam) return;
+		exportFormat = format;
+		try {
+			const params = { ...buildParams(true) };
+			if (searchQuery.trim()) params.q = searchQuery.trim();
+			await api.exportTransactions(selectedTeam, format, params);
+			toast.success(format === 'pdf' ? 'PDF diunduh' : 'Excel diunduh');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Gagal export');
+		} finally {
+			exportFormat = null;
+		}
+	}
+
 	onMount(() => {
 		pageSize = readPageSize();
 		pageSizeValue = String(pageSize);
@@ -295,7 +312,7 @@
 	</div>
 {:else}
 	{#if balance}
-		<BalanceCards {balance} />
+		<BalanceCards {balance} {periodLabel} />
 		<DashboardChart {balance} transactions={chartTransactions} />
 	{/if}
 
@@ -311,11 +328,18 @@
 						{/if}
 					</p>
 				</div>
-				{#if selectedIds.length > 0}
-					<Button color="red" outline size="sm" onclick={batchDelete}>
-						Hapus ({selectedIds.length})
-					</Button>
-				{/if}
+				<div class="flex flex-wrap items-center gap-2">
+					<TxExportButtons
+						disabled={needsTeam || !selectedTeam}
+						busyFormat={exportFormat}
+						onExport={exportTx}
+					/>
+					{#if selectedIds.length > 0}
+						<Button color="red" outline size="sm" onclick={batchDelete}>
+							Hapus ({selectedIds.length})
+						</Button>
+					{/if}
+				</div>
 			</div>
 			<div class="grid grid-cols-2 items-end gap-2 md:flex md:flex-wrap">
 				<div class="col-span-2 md:w-[11.5rem]">
@@ -328,10 +352,10 @@
 							Semua
 						</button>
 						<button type="button" data-tone="in" aria-pressed={filterJenis === 'in'} onclick={() => setFilterJenis('in')}>
-							Pemasukan
+							Masuk
 						</button>
 						<button type="button" data-tone="out" aria-pressed={filterJenis === 'out'} onclick={() => setFilterJenis('out')}>
-							Pengeluaran
+							Keluar
 						</button>
 					</div>
 				</div>

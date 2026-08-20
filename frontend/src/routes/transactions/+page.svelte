@@ -120,7 +120,7 @@
 
 <svelte:head><title>Input Transaksi — KasQ</title></svelte:head>
 
-<div class="page-head flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+<div class="page-head flex max-w-2xl flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
 	<div>
 		<h1>Input transaksi</h1>
 		<p>Catat pemasukan atau pengeluaran, opsional dengan foto nota.</p>
@@ -172,7 +172,7 @@
 					disabled={needsTeam}
 					onclick={() => (jenis = 'out')}
 				>
-					Pengeluaran
+					Keluar
 					<span class="seg-sub">Uang keluar dari kas</span>
 				</button>
 				<button
@@ -182,7 +182,7 @@
 					disabled={needsTeam}
 					onclick={() => (jenis = 'in')}
 				>
-					Pemasukan
+					Masuk
 					<span class="seg-sub">Uang masuk ke kas</span>
 				</button>
 			</div>

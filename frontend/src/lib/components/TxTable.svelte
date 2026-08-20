@@ -1,7 +1,11 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import { flip } from 'svelte/animate';
+	import { cubicOut } from 'svelte/easing';
 	import type { Transaction } from '$lib/types';
-	import { formatDate, formatRupiah, jenisLabel, sourceLabel, txNotaKeys } from '$lib/utils';
+	import { formatDate, formatRupiah, jenisLabel, txNotaKeys } from '$lib/utils';
 	import { Badge, Button, Checkbox } from 'flowbite-svelte';
+	import SourceIcon from '$lib/components/SourceIcon.svelte';
 	import {
 		ArrowDownOutline,
 		ArrowUpOutline,
@@ -45,10 +49,53 @@
 	let detailTx = $state<Transaction | null>(null);
 	let localRows = $state<Transaction[]>([]);
 	let dragId = $state<string | null>(null);
+	const tableRowEls = new Map<string, HTMLElement>();
 
 	$effect(() => {
 		localRows = [...transactions];
 	});
+
+	function bindTableRow(node: HTMLElement, id: string) {
+		tableRowEls.set(id, node);
+		return {
+			update(newId: string) {
+				if (newId === id) return;
+				tableRowEls.delete(id);
+				id = newId;
+				tableRowEls.set(id, node);
+			},
+			destroy() {
+				tableRowEls.delete(id);
+			}
+		};
+	}
+
+	async function withTableFlip(mutate: () => void) {
+		const first = new Map<string, DOMRect[]>();
+		for (const [id, el] of tableRowEls) {
+			first.set(
+				id,
+				[...el.children].map((cell) => (cell as HTMLElement).getBoundingClientRect())
+			);
+		}
+		mutate();
+		await tick();
+		for (const [id, rects] of first) {
+			const el = tableRowEls.get(id);
+			if (!el) continue;
+			[...el.children].forEach((cell, i) => {
+				const prev = rects[i];
+				if (!prev) return;
+				const next = (cell as HTMLElement).getBoundingClientRect();
+				const dy = prev.top - next.top;
+				if (Math.abs(dy) < 0.5) return;
+				(cell as HTMLElement).animate(
+					[{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
+					{ duration: 260, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+				);
+			});
+		}
+	}
 
 	function txDate(tx: Transaction) {
 		return tx.tanggal.slice(0, 10);
@@ -73,10 +120,13 @@
 	function move(tx: Transaction, dir: -1 | 1) {
 		if (!sortable || !canMove(tx, dir)) return;
 		const i = localRows.findIndex((row) => row.id === tx.id);
-		const next = [...localRows];
-		[next[i], next[i + dir]] = [next[i + dir], next[i]];
-		localRows = next;
-		emitReorder(next, txDate(tx));
+		const date = txDate(tx);
+		void withTableFlip(() => {
+			const next = [...localRows];
+			[next[i], next[i + dir]] = [next[i + dir], next[i]];
+			localRows = next;
+			emitReorder(next, date);
+		});
 	}
 
 	function onDragStart(e: DragEvent, tx: Transaction) {
@@ -108,12 +158,15 @@
 			dragId = null;
 			return;
 		}
-		const next = [...localRows];
-		const [item] = next.splice(fromIdx, 1);
-		next.splice(toIdx, 0, item);
-		localRows = next;
+		const date = txDate(from);
 		dragId = null;
-		emitReorder(next, txDate(from));
+		void withTableFlip(() => {
+			const next = [...localRows];
+			const [item] = next.splice(fromIdx, 1);
+			next.splice(toIdx, 0, item);
+			localRows = next;
+			emitReorder(next, date);
+		});
 	}
 
 	function onDragEnd() {
@@ -149,12 +202,6 @@
 			selectedIds = localRows.map((tx) => tx.id);
 		}
 	}
-
-	function sourceColor(source: Transaction['source']) {
-		if (source === 'wa') return 'green';
-		if (source === 'tele') return 'blue';
-		return 'indigo';
-	}
 </script>
 
 {#snippet actionIcons(tx: Transaction)}
@@ -177,7 +224,10 @@
 {:else}
 	<div class="space-y-3 md:hidden">
 		{#each localRows as tx (tx.id)}
-			<article class="rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/80">
+			<article
+				class="rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/80"
+				animate:flip={{ duration: 260, easing: cubicOut }}
+			>
 				<div class="mb-2 flex items-start justify-between gap-2">
 					<div class="flex min-w-0 items-start gap-2">
 						{#if selectable}
@@ -220,9 +270,9 @@
 						{formatRupiah(tx.total)}
 					</p>
 				</div>
-				<div class="mb-2 flex flex-wrap gap-1.5">
+				<div class="mb-2 flex flex-wrap items-center gap-1.5">
 					<Badge color={tx.jenis === 'in' ? 'green' : 'red'}>{jenisLabel(tx.jenis)}</Badge>
-					<Badge color={sourceColor(tx.source)}>{sourceLabel(tx.source)}</Badge>
+					<SourceIcon source={tx.source} size="sm" />
 				</div>
 				{#if tx.keterangan}
 					<button
@@ -279,6 +329,7 @@
 				{#each localRows as tx (tx.id)}
 					<tr
 						class="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60 {dragId === tx.id ? 'opacity-50' : ''}"
+						use:bindTableRow={tx.id}
 						ondragover={(e) => onDragOver(e, tx)}
 						ondrop={(e) => onDrop(e, tx)}
 					>
@@ -340,7 +391,7 @@
 							{formatRupiah(tx.total)}
 						</td>
 						<td class="px-3 py-2">
-							<Badge color={sourceColor(tx.source)}>{sourceLabel(tx.source)}</Badge>
+							<SourceIcon source={tx.source} />
 						</td>
 						<td class="max-w-xs px-3 py-2 text-slate-500 dark:text-slate-400">
 							{#if tx.keterangan}

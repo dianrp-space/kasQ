@@ -621,53 +621,55 @@
 	</section>
 </div>
 
-<section class="app-panel mt-5">
-	<h2 class="mb-1 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Link laporan</h2>
-	<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
-		Tautan publik tanpa login. Atur slug sendiri atau pakai default slug tim/kas.
-	</p>
-	{#if integration}
-		<div class="space-y-3">
-			<div class="auth-field">
-				<Label for="reportSlug" class="text-sm font-medium text-slate-700 dark:text-slate-300">Slug URL</Label>
-				<div class="flex flex-wrap items-center gap-2">
-					<span class="text-xs text-slate-500 dark:text-slate-400">/report/</span>
-					<Input
-						id="reportSlug"
-						class="flex-1 font-mono text-sm"
-						placeholder={integration.team_slug ?? 'kas-batam'}
-						bind:value={reportSlug}
-					/>
+<div class="mt-5 grid gap-5 lg:grid-cols-2">
+	<section class="app-panel">
+		<h2 class="mb-1 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Link laporan</h2>
+		<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
+			Tautan publik tanpa login. Atur slug sendiri atau pakai default slug tim/kas.
+		</p>
+		{#if integration}
+			<div class="space-y-3">
+				<div class="auth-field">
+					<Label for="reportSlug" class="text-sm font-medium text-slate-700 dark:text-slate-300">Slug URL</Label>
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="text-xs text-slate-500 dark:text-slate-400">/report/</span>
+						<Input
+							id="reportSlug"
+							class="flex-1 font-mono text-sm"
+							placeholder={integration.team_slug ?? 'kas-batam'}
+							bind:value={reportSlug}
+						/>
+					</div>
+					{#if integration.team_slug}
+						<p class="auth-hint">
+							Default:
+							<button type="button" class="font-medium text-primary-700 underline dark:text-primary-400" onclick={() => (reportSlug = integration?.team_slug ?? '')}>{integration.team_slug}</button>
+							{#if integration.team_name}
+								<span> (dari {integration.team_name})</span>
+							{/if}
+						</p>
+					{/if}
 				</div>
-				{#if integration.team_slug}
-					<p class="auth-hint">
-						Default:
-						<button type="button" class="font-medium text-primary-700 underline dark:text-primary-400" onclick={() => (reportSlug = integration?.team_slug ?? '')}>{integration.team_slug}</button>
-						{#if integration.team_name}
-							<span> (dari {integration.team_name})</span>
-						{/if}
-					</p>
+				{#if integration.report_url || reportPreviewUrl}
+					<div class="flex flex-wrap items-center gap-2">
+						<Input class="flex-1 font-mono text-xs" readonly value={integration.report_url ?? reportPreviewUrl} />
+						<Button color="light" onclick={copyLink}>Salin</Button>
+					</div>
 				{/if}
-			</div>
-			{#if integration.report_url || reportPreviewUrl}
-				<div class="flex flex-wrap items-center gap-2">
-					<Input class="flex-1 font-mono text-xs" readonly value={integration.report_url ?? reportPreviewUrl} />
-					<Button color="light" onclick={copyLink}>Salin</Button>
+				<div class="flex flex-wrap gap-2">
+					<Button onclick={saveReportSlug}>Simpan slug</Button>
+					<Button color="light" onclick={resetReportSlug}>Reset ke default</Button>
 				</div>
-			{/if}
-			<div class="flex flex-wrap gap-2">
-				<Button onclick={saveReportSlug}>Simpan slug</Button>
-				<Button color="light" onclick={resetReportSlug}>Reset ke default</Button>
 			</div>
-		</div>
-	{/if}
-</section>
+		{/if}
+	</section>
 
-<section class="app-panel mt-5">
-	<h2 class="mb-2 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Command bot</h2>
-	<pre class="app-code">/start (Telegram — minta Chat ID)
+	<section class="app-panel">
+		<h2 class="mb-2 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Command bot</h2>
+		<pre class="app-code">/start (Telegram — minta Chat ID)
 /saldo atau !saldo
 /link atau !link
 out#100826#Deskripsi#12000</pre>
-	<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">Hari boleh dikosongkan (otomatis dari tanggal). Bot KasQ: kirim /start untuk Chat ID.</p>
-</section>
+		<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">Hari boleh dikosongkan (otomatis dari tanggal). Bot KasQ: kirim /start untuk Chat ID.</p>
+	</section>
+</div>
