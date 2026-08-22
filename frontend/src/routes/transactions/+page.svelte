@@ -262,7 +262,7 @@
 </section>
 
 <section class="app-panel mt-5 max-w-2xl">
-	<h2 class="mb-2 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Format WA / Telegram</h2>
+	<h2 class="mb-2 text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">Format Input via WA / Telegram</h2>
 	<pre class="app-code">out#Senin#100826#Beli air minum#12000#(Keterangan/opsional)
 out#100826#Beli air minum#12000
 in#Sabtu#010826#Refill kas Batam#2000000</pre>
