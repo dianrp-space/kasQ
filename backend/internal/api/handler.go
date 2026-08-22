@@ -1139,13 +1139,13 @@ func (h *Handler) UpdateTele(c *gin.Context) {
 	}
 
 	if req.Enabled {
+		if chatID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Chat ID wajib diisi. Kirim /start ke bot untuk mendapat Chat ID."})
+			return
+		}
 		if useSystem {
 			if h.teleManager == nil || !h.teleManager.SystemBotAvailable() {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Bot KasQ belum dikonfigurasi. Hubungi admin atau gunakan bot sendiri."})
-				return
-			}
-			if chatID == nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Chat ID wajib untuk Bot KasQ. Kirim /start ke bot untuk mendapat Chat ID."})
 				return
 			}
 			if h.teleManager != nil {

@@ -282,15 +282,15 @@ func (m *Manager) StopTeam(teamID uuid.UUID) {
 }
 
 func (m *Manager) chatAllowed(integ *models.Integration, chatID int64) bool {
-	if integ.TeleAllowedChatID == nil {
-		return true
-	}
-	return chatID == *integ.TeleAllowedChatID
+	return integ.TeleAllowedChatID != nil && chatID == *integ.TeleAllowedChatID
 }
 
 func (m *Manager) rejectChat(c tele.Context, integ *models.Integration) error {
 	if integ.TeleAllowedChatID == nil {
-		return nil
+		return c.Send(fmt.Sprintf(
+			"❌ Chat ini belum terdaftar untuk tim/kas ini.\nChat ID kamu: %d\n\nDaftarkan Chat ID di atas di halaman Integrasi KasQ agar bisa input.",
+			c.Chat().ID,
+		))
 	}
 	return c.Send(fmt.Sprintf(
 		"❌ Chat ini belum terdaftar untuk tim/kas ini.\nChat ID kamu: %d\nChat ID terdaftar: %d\n\nPerbarui Chat ID di halaman Integrasi KasQ.",

@@ -269,8 +269,8 @@
 		success = '';
 		try {
 			const useSystem = teleMode === 'system';
-			if (enabled && useSystem && !teleChatId.trim()) {
-				error = 'Chat ID wajib untuk Bot KasQ. Kirim /start ke bot, lalu tempel angkanya di sini.';
+			if (enabled && !teleChatId.trim()) {
+				error = 'Chat ID wajib diisi. Kirim /start ke bot, lalu tempel angkanya di sini.';
 				return;
 			}
 			if (enabled && !useSystem && !teleToken.trim() && !integration?.has_tele_token) {
@@ -601,10 +601,10 @@
 					<Input
 						id="teleChatIdCustom"
 						class="font-mono text-sm"
-						placeholder="Contoh: -1001234567890 (kosongkan = semua chat)"
+						placeholder="Contoh: -1001234567890"
 						bind:value={teleChatId}
 					/>
-					<p class="auth-hint">Grup biasanya ID negatif. Jika salah, bot membalas Chat ID saat dikirimi pesan.</p>
+					<p class="auth-hint">Wajib. Grup biasanya ID negatif. Jika salah, bot membalas Chat ID saat dikirimi pesan.</p>
 				</div>
 				<p class="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
 					Di grup: gunakan <strong>/saldo</strong> (disarankan) atau <strong>!saldo</strong>.
