@@ -169,8 +169,13 @@
 						</p>
 					{/if}
 				</div>
+				<a
+					href="/support"
+					class="ms-auto shrink-0 self-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50 dark:border-slate-700 dark:text-primary-400 dark:hover:bg-slate-800"
+				>
+					Tentang app
+				</a>
 			</div>
-			<BalanceCards balance={report.balance} {periodLabel} />
 			<BalanceCards balance={report.balance} {periodLabel} />
 			<DashboardChart balance={report.balance} transactions={report.transactions} />
 
