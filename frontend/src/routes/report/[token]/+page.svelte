@@ -5,6 +5,7 @@
 	import { appSettings, loadAppSettings } from '$lib/appSettings.svelte';
 	import AppBrand from '$lib/components/AppBrand.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import VersionLink from '$lib/components/VersionLink.svelte';
 	import type { PublicReport } from '$lib/types';
 	import TxTable from '$lib/components/TxTable.svelte';
 	import NotaPreviewModal from '$lib/components/NotaPreviewModal.svelte';
@@ -169,12 +170,15 @@
 						</p>
 					{/if}
 				</div>
-				<a
-					href="/support"
-					class="ms-auto shrink-0 self-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50 dark:border-slate-700 dark:text-primary-400 dark:hover:bg-slate-800"
-				>
-					Tentang app
-				</a>
+				<div class="ms-auto flex shrink-0 flex-col items-end gap-1.5">
+					<a
+						href="/support"
+						class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-primary-700 hover:bg-primary-50 dark:border-slate-700 dark:text-primary-400 dark:hover:bg-slate-800"
+					>
+						Tentang app
+					</a>
+					<VersionLink class="text-xs text-slate-400 hover:text-primary-700 dark:text-slate-500 dark:hover:text-primary-400" />
+				</div>
 			</div>
 			<BalanceCards balance={report.balance} {periodLabel} />
 			<DashboardChart balance={report.balance} transactions={report.transactions} />
