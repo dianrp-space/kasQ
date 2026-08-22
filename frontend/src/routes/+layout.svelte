@@ -24,6 +24,7 @@
 	const isPublic = $derived($page.url.pathname.startsWith('/report/'));
 	const isAuthPage = $derived(authPaths.some((p) => $page.url.pathname.startsWith(p)));
 	const isChangelog = $derived($page.url.pathname === '/changelog');
+	const isSupport = $derived($page.url.pathname === '/support');
 
 	const faviconHref = $derived(brandingUrl(appSettings.favicon_url) ?? defaultBrandImage);
 	const pageTitle = $derived(`${appSettings.app_name}${appSettings.app_tagline ? ' — ' + appSettings.app_tagline.split('—')[0].trim() : ''}`);
@@ -37,7 +38,7 @@
 			loading = false;
 			return;
 		}
-		if (isChangelog) {
+		if (isChangelog || isSupport) {
 			api.me()
 				.then((u) => {
 					user = u;
@@ -67,7 +68,7 @@
 		try {
 			user = await api.me();
 		} catch {
-			if (isChangelog) {
+			if (isChangelog || isSupport) {
 				user = null;
 				return;
 			}
@@ -123,7 +124,7 @@
 		<ConfirmDialog />
 		<ToastHost />
 	</div>
-{:else if isChangelog}
+{:else if isChangelog || isSupport}
 	<div class="min-h-screen bg-slate-50 dark:bg-slate-900">
 		<header class="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
 			<div class="mx-auto flex max-w-3xl items-center justify-between gap-3">
