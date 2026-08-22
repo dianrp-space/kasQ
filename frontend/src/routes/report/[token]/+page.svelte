@@ -126,46 +126,9 @@
 <div class="min-h-screen bg-slate-50 dark:bg-slate-900">
 	<header class="border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
 		<div class="mx-auto max-w-6xl">
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+			<div class="flex items-center justify-between gap-3">
 				<AppBrand size="sm" />
-				<div class="flex items-center justify-between gap-3 sm:justify-end">
-					{#if report}
-						<div class="flex min-w-0 items-center gap-2.5">
-							{#if report.members && report.members.length > 0}
-								<div class="flex shrink-0 -space-x-2">
-									{#each report.members as member (member.id)}
-										{#if member.has_avatar}
-											<img
-												src={api.getPublicMemberAvatar(token, member.id)}
-												alt={member.name}
-												title={member.name}
-												class="h-8 w-8 rounded-full border-2 border-white object-cover shadow-sm dark:border-slate-900"
-											/>
-										{:else}
-											<div
-												title={member.name}
-												class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-primary-600 text-[11px] font-semibold text-white shadow-sm dark:border-slate-900"
-											>
-												{nameInitials(member.name)}
-											</div>
-										{/if}
-									{/each}
-								</div>
-							{/if}
-							<div class="min-w-0">
-								<p class="truncate text-sm font-semibold text-primary-700 dark:text-primary-400 sm:text-right">
-									{report.team.name}
-								</p>
-								{#if report.members && report.members.length > 0}
-									<p class="truncate text-xs text-slate-500 dark:text-slate-400 sm:text-right">
-										{report.members.map((m) => m.name).join(', ')}
-									</p>
-								{/if}
-							</div>
-						</div>
-					{/if}
-					<ThemeToggle class="shrink-0 bg-white shadow-sm dark:bg-slate-800" />
-				</div>
+				<ThemeToggle class="shrink-0 bg-white shadow-sm dark:bg-slate-800" />
 			</div>
 		</div>
 	</header>
@@ -174,6 +137,40 @@
 		{#if error}
 			<Alert color="red" class="text-center">{error}</Alert>
 		{:else if report}
+			<div class="mb-5 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-700 dark:bg-slate-900">
+				{#if report.members && report.members.length > 0}
+					<div class="flex shrink-0 -space-x-3">
+						{#each report.members as member (member.id)}
+							{#if member.has_avatar}
+								<img
+									src={api.getPublicMemberAvatar(token, member.id)}
+									alt={member.name}
+									title={member.name}
+									class="h-12 w-12 rounded-full border-[3px] border-white object-cover shadow-md sm:h-14 sm:w-14 dark:border-slate-900"
+								/>
+							{:else}
+								<div
+									title={member.name}
+									class="flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-white bg-primary-600 text-sm font-semibold text-white shadow-md sm:h-14 sm:w-14 dark:border-slate-900"
+								>
+									{nameInitials(member.name)}
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+				<div class="min-w-0">
+					<p class="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-xl dark:text-slate-50">
+						{report.team.name}
+					</p>
+					{#if report.members && report.members.length > 0}
+						<p class="truncate text-sm text-slate-500 dark:text-slate-400">
+							{report.members.map((m) => m.name).join(', ')}
+						</p>
+					{/if}
+				</div>
+			</div>
+			<BalanceCards balance={report.balance} {periodLabel} />
 			<BalanceCards balance={report.balance} {periodLabel} />
 			<DashboardChart balance={report.balance} transactions={report.transactions} />
 
